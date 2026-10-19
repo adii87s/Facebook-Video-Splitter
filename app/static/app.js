@@ -29,7 +29,24 @@ const el = {
   clipCount: $('#clipCount'),
   clipGrid: $('#clipGrid'),
   downloadAll: $('#downloadAll'),
-  toast: $('#toast')
+  toast: $('#toast'),
+  facebookHeaderState: $('#facebookHeaderState'),
+  facebookSetupPrompt: $('#facebookSetupPrompt'),
+  facebookDisconnected: $('#facebookDisconnected'),
+  facebookConnected: $('#facebookConnected'),
+  facebookPageSelect: $('#facebookPageSelect'),
+  selectFacebookPage: $('#selectFacebookPage'),
+  refreshFacebookStatus: $('#refreshFacebookStatus'),
+  facebookConnectedCaption: $('#facebookConnectedCaption'),
+  captionTemplate: $('#captionTemplate'),
+  publishAll: $('#publishAll'),
+  publishHint: $('#publishHint'),
+  publishProgress: $('#publishProgress'),
+  publishStatusLabel: $('#publishStatusLabel'),
+  publishPercent: $('#publishPercent'),
+  publishBar: $('#publishBar'),
+  publishSubtext: $('#publishSubtext'),
+  publishLog: $('#publishLog')
 };
 
 function escapeHtml(value) {
@@ -77,8 +94,167 @@ async function loadStatus() {
   try {
     state.status = await api('/api/status');
     el.uploadLimit.textContent = 'Maximum upload size: ' + state.status.max_upload_mb + ' MiB';
+    renderFacebookStatus();
   } catch {
     el.uploadLimit.textContent = 'Upload and processing run on this computer';
+    if (el.facebookHeaderState) el.facebookHeaderState.textContent = 'Facebook status unavailable';
+  }
+}
+
+function renderFacebookStatus() {
+  if (!state.status) return;
+  const configured = Boolean(state.status.facebook_app_configured);
+  const connected = Boolean(state.status.facebook_connected);
+  if (el.facebookHeaderState) {
+    el.facebookHeaderState.textContent = !configured
+      ? 'Facebook setup needed'
+      : connected ? 'Facebook Page connected' : 'Facebook not connected';
+  }
+  el.facebookSetupPrompt.classList.toggle('hidden', configured);
+  el.facebookDisconnected.classList.toggle('hidden', !configured || connected);
+  el.facebookConnected.classList.toggle('hidden', !connected);
+
+  const pages = state.status.pages || [];
+  const current = state.status.selected_page_id || '';
+  if (el.facebookPageSelect) {
+    el.facebookPageSelect.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = pages.length ? 'Choose a Facebook Page…' : 'No Pages were returned';
+    el.facebookPageSelect.appendChild(placeholder);
+    pages.forEach(page => {
+      const option = document.createElement('option');
+      option.value = String(page.id);
+      option.textContent = page.name;
+      el.facebookPageSelect.appendChild(option);
+    });
+    el.facebookPageSelect.value = current;
+  }
+
+  const selectedPage = pages.find(page => String(page.id) === String(current));
+  if (el.facebookConnectedCaption) {
+    el.facebookConnectedCaption.textContent = selectedPage
+      ? 'Selected Page: ' + selectedPage.name + '. Ready when you are.'
+      : 'Facebook is connected. Choose a Page above and click Use this Page.';
+  }
+  if (el.selectFacebookPage) {
+    el.selectFacebookPage.disabled = !connected || !el.facebookPageSelect.value || el.facebookPageSelect.value === current;
+  }
+  updatePublishUI();
+}
+
+function renderPublishLog() {
+  if (!el.publishLog) return;
+  const log = state.job?.publish_log || [];
+  el.publishLog.innerHTML = log.map(item => {
+    const status = String(item.status || 'queued');
+    const good = ['submitted', 'published'].includes(status);
+    const bad = ['failed', 'blocked'].includes(status);
+    const css = good ? ' published' : bad ? ' failed' : '';
+    const icon = good ? '✓' : bad ? '!' : '…';
+    return '<div class="publish-log-row"><span class="publish-status-icon' + css + '">' + icon + '</span>' +
+      '<div><strong>Part ' + escapeHtml(item.part) + ' · ' + escapeHtml(status) + '</strong>' +
+      '<p>' + escapeHtml(item.message || '') + '</p></div></div>';
+  }).join('');
+}
+
+function updatePublishUI() {
+  if (!el.publishAll) return;
+  const job = state.job;
+  const publishStatus = job?.publish_status || 'not_started';
+  const ready = Boolean(job && job.status === 'completed' && Array.isArray(job.clips) && job.clips.length);
+  const pageSelected = Boolean(state.status?.selected_page_id);
+  const busy = ['queued', 'publishing'].includes(publishStatus);
+  const done = publishStatus === 'completed';
+  const failed = publishStatus === 'error';
+  const label = el.publishAll.querySelector('span:nth-child(2)');
+
+  el.publishAll.disabled = !ready || !pageSelected || busy || done;
+  if (label) {
+    label.textContent = busy ? 'Publishing clips…'
+      : done ? 'All clips submitted'
+      : failed ? 'Retry remaining clips'
+      : 'Publish all clips in order';
+  }
+
+  const selectedPage = (state.status?.pages || []).find(page => String(page.id) === String(state.status?.selected_page_id));
+  const pageName = selectedPage?.name || 'your selected Page';
+  if (!state.status?.facebook_app_configured) {
+    el.publishHint.textContent = 'Complete the one-time Meta setup first.';
+  } else if (!state.status.facebook_connected) {
+    el.publishHint.textContent = 'Connect Facebook and approve Page publishing permissions.';
+  } else if (!pageSelected) {
+    el.publishHint.textContent = 'Choose a Page above and click Use this Page.';
+  } else if (!ready) {
+    el.publishHint.textContent = 'Create your clips first. Nothing publishes automatically.';
+  } else if (busy) {
+    el.publishHint.textContent = 'Publishing to ' + pageName + ' in order. The queue stops on the first failed part.';
+  } else if (done) {
+    el.publishHint.textContent = 'Facebook accepted all clip publish requests for ' + pageName + '.';
+  } else if (failed) {
+    el.publishHint.textContent = 'A part failed. Fix the issue and retry the remaining parts.';
+  } else {
+    el.publishHint.textContent = 'Ready to publish ' + job.clips.length + ' clip(s) to ' + pageName + '. You must press Publish.';
+  }
+
+  const showProgress = Boolean(job && ['queued', 'publishing', 'completed', 'error'].includes(publishStatus) && publishStatus !== 'not_started');
+  el.publishProgress.classList.toggle('hidden', !showProgress);
+  if (showProgress) {
+    const percent = Number(job.publish_progress || 0);
+    el.publishPercent.textContent = percent + '%';
+    el.publishBar.style.width = percent + '%';
+    el.publishStatusLabel.textContent = busy ? 'Publishing clips…'
+      : done ? 'Publish requests completed'
+      : failed ? 'Publishing stopped after an error'
+      : 'Waiting to publish…';
+    el.publishSubtext.textContent = job.publish_error || (done
+      ? 'Meta accepted the publish requests. Processing and public visibility may take a little time.'
+      : 'Clips are submitted one at a time in order. Partly stops if one fails.');
+  }
+  renderPublishLog();
+}
+
+async function saveSelectedPage() {
+  const pageId = el.facebookPageSelect?.value;
+  if (!pageId) return toast('Choose a Facebook Page first.');
+  el.selectFacebookPage.disabled = true;
+  try {
+    await api('/api/facebook/select', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({page_id: pageId})
+    });
+    state.status = await api('/api/status');
+    renderFacebookStatus();
+    toast('Publishing destination saved.');
+  } catch (error) {
+    renderFacebookStatus();
+    toast(error.message);
+  }
+}
+
+async function startPublishing() {
+  if (!state.job?.id || state.job.status !== 'completed') return toast('Create clips first.');
+  if (!state.status?.selected_page_id) return toast('Connect Facebook and select a Page first.');
+  const selectedPage = (state.status.pages || []).find(page => String(page.id) === String(state.status.selected_page_id));
+  const pageName = selectedPage?.name || 'your selected Page';
+  const count = (state.job.clips || []).length;
+  if (!window.confirm('Publish ' + count + ' clip(s) to "' + pageName + '" in order? This will create posts on that Facebook Page.')) return;
+
+  el.publishAll.disabled = true;
+  try {
+    state.job = await api('/api/jobs/' + state.job.id + '/publish', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({caption_template: el.captionTemplate.value.trim() || 'Part {part} of {total}'})
+    });
+    updatePublishUI();
+    toast('Publishing queue started.');
+    clearTimeout(state.timer);
+    state.timer = setTimeout(refreshJob, 700);
+  } catch (error) {
+    updatePublishUI();
+    toast(error.message);
   }
 }
 
@@ -130,6 +306,7 @@ function drawClips() {
   el.downloadAll.href = '/api/jobs/' + state.job.id + '/download-all';
   el.downloadAll.setAttribute('aria-disabled', 'false');
   el.downloadAll.classList.remove('is-disabled');
+  updatePublishUI();
 }
 
 async function refreshJob() {
@@ -138,8 +315,10 @@ async function refreshJob() {
     state.job = await api('/api/jobs/' + state.job.id);
     updateProcessing();
     if (state.job.status === 'completed') drawClips();
+    updatePublishUI();
     const stillProcessing = ['queued', 'processing'].includes(state.job.status);
-    if (stillProcessing) state.timer = setTimeout(refreshJob, 1200);
+    const stillPublishing = ['queued', 'publishing'].includes(state.job.publish_status);
+    if (stillProcessing || stillPublishing) state.timer = setTimeout(refreshJob, 1200);
   } catch (error) {
     toast(error.message);
   }
@@ -245,6 +424,20 @@ el.form.addEventListener('submit', async event => {
   }
 });
 
+el.facebookPageSelect.addEventListener('change', () => {
+  const samePage = el.facebookPageSelect.value === (state.status?.selected_page_id || '');
+  el.selectFacebookPage.disabled = !el.facebookPageSelect.value || samePage;
+});
+
+el.selectFacebookPage.addEventListener('click', saveSelectedPage);
+el.refreshFacebookStatus.addEventListener('click', async () => {
+  el.refreshFacebookStatus.disabled = true;
+  await loadStatus();
+  el.refreshFacebookStatus.disabled = false;
+  toast('Facebook Page list refreshed.');
+});
+el.publishAll.addEventListener('click', startPublishing);
+
 el.downloadAll.addEventListener('click', event => {
   if (el.downloadAll.getAttribute('aria-disabled') === 'true') {
     event.preventDefault();
@@ -254,3 +447,4 @@ el.downloadAll.addEventListener('click', event => {
 
 updateMode();
 loadStatus();
+updatePublishUI();

@@ -11,7 +11,10 @@ def test_home_and_setup_pages_render():
     assert home.status_code == 200
     assert "Cut a selected range" in home.text
     assert "Download all clips (ZIP)" in home.text
-    assert "Facebook setup guide" not in home.text
+    assert "Connect a Facebook Page" in home.text
+    assert "Connect Facebook" in home.text
+    assert "Publish all clips in order" in home.text
+    assert "No Facebook login needed" not in home.text
     assert setup.status_code == 200
     assert "FACEBOOK_REDIRECT_URI" in setup.text
 
