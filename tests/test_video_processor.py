@@ -87,3 +87,51 @@ def test_render_profiles_offer_faster_720p_and_quality_1080p():
     assert fast["preset"] == "ultrafast"
     assert (quality["width"], quality["height"]) == (1080, 1920)
     assert quality["preset"] == "veryfast"
+
+
+def test_split_renders_multiple_parts_concurrently(monkeypatch, tmp_path: Path):
+    import subprocess
+    import threading
+    import time
+
+    import app.services.video_processor as processor
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source placeholder")
+    monkeypatch.setattr(processor, "get_duration", lambda _path: 60.0)
+    monkeypatch.setattr(processor, "_render_worker_count", lambda total: min(3, total))
+    monkeypatch.setattr(
+        processor,
+        "_badge_image",
+        lambda path, _label: path.write_bytes(b"badge"),
+    )
+
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    def fake_run(command):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            time.sleep(0.05)
+            Path(command[-1]).write_bytes(b"rendered clip")
+            return subprocess.CompletedProcess(command, 0, "", "")
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(processor, "_run", fake_run)
+    clips = processor.split_video(
+        source,
+        tmp_path / "output",
+        clip_seconds=15,
+        processing_mode="fast",
+    )
+
+    assert [clip["part"] for clip in clips] == [1, 2, 3, 4]
+    assert max_active >= 2
+    assert all((tmp_path / "output" / clip["filename"]).is_file() for clip in clips)
+
