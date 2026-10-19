@@ -14,6 +14,8 @@ def test_home_and_setup_pages_render():
     assert "Connect a Facebook Page" in home.text
     assert "Connect Facebook" in home.text
     assert "Publish all clips in order" in home.text
+    assert "Auto-publish when clips are ready" in home.text
+    assert "Faster" in home.text
     assert "No Facebook login needed" not in home.text
     assert setup.status_code == 200
     assert "FACEBOOK_REDIRECT_URI" in setup.text
@@ -72,3 +74,35 @@ def test_download_all_clips_returns_zip(monkeypatch, tmp_path):
     with ZipFile(BytesIO(response.content)) as archive:
         assert archive.namelist() == ["part-001.mp4", "part-002.mp4"]
         assert archive.read("part-001.mp4") == b"part one"
+
+
+
+def test_auto_publish_requires_a_selected_facebook_page(monkeypatch):
+    monkeypatch.setattr(main, "selected_page_with_token", lambda: None)
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/jobs",
+            files={"video": ("test.mp4", b"fake-video", "video/mp4")},
+            data={"auto_publish": "true"},
+        )
+
+    assert response.status_code == 409
+    assert "Connect Facebook and select a Page" in response.json()["detail"]
+
+
+
+def test_auto_publish_rejects_reel_lengths_over_60_seconds(monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "selected_page_with_token",
+        lambda: {"id": "123", "name": "Test Page", "access_token": "private-token"},
+    )
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/jobs",
+            files={"video": ("test.mp4", b"fake-video", "video/mp4")},
+            data={"auto_publish": "true", "mode": "split", "clip_seconds": "120"},
+        )
+
+    assert response.status_code == 422
+    assert "60 seconds or shorter" in response.json()["detail"]

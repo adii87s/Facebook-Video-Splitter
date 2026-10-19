@@ -72,3 +72,18 @@ def test_manual_cut_uses_requested_start_and_duration(monkeypatch, tmp_path: Pat
     assert clips[0]["duration"] == 11.5
     assert "12.500" in seen_commands[0]
     assert "11.500" in seen_commands[0]
+    assert "scale=720:1280" in " ".join(seen_commands[0])
+    assert "ultrafast" in seen_commands[0]
+
+
+
+def test_render_profiles_offer_faster_720p_and_quality_1080p():
+    import app.services.video_processor as processor
+
+    fast = processor._render_profile("fast")
+    quality = processor._render_profile("quality")
+
+    assert (fast["width"], fast["height"]) == (720, 1280)
+    assert fast["preset"] == "ultrafast"
+    assert (quality["width"], quality["height"]) == (1080, 1920)
+    assert quality["preset"] == "veryfast"

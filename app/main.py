@@ -32,7 +32,7 @@ from app.config import (
     META_GRAPH_API_VERSION,
     SESSION_SECRET,
 )
-from app.database import init_db, list_pages, save_pages, select_page, selected_page_with_token
+from app.database import init_db, list_pages, page_with_token, save_pages, select_page, selected_page_with_token
 from app.job_store import job_dir, public_job, read_job, write_job
 from app.services.facebook_publisher import FacebookPublishError, publish_reel
 from app.services.video_processor import VideoProcessingError, cut_video, split_video
@@ -237,9 +237,20 @@ async def create_job(
     clip_seconds: int = Form(CLIP_SECONDS),
     cut_start: float = Form(0),
     cut_end: float = Form(30),
+    processing_mode: str = Form("fast"),
+    auto_publish: bool = Form(False),
+    caption_template: str = Form("Part {part} of {total}"),
 ) -> dict[str, Any]:
     if mode not in {"split", "cut"}:
         raise HTTPException(status_code=422, detail="Choose either split into parts or cut a selected range.")
+    if processing_mode not in {"fast", "quality"}:
+        raise HTTPException(status_code=422, detail="Choose Faster (720p) or Higher quality (1080p) processing.")
+    selected_auto_page = None
+    if auto_publish:
+        selected_auto_page = selected_page_with_token()
+        if not selected_auto_page:
+            raise HTTPException(status_code=409, detail="Connect Facebook and select a Page before enabling auto-publish.")
+        caption_template = caption_template.strip()[:500] or "Part {part} of {total}"
     if mode == "split" and not 5 <= clip_seconds <= 300:
         raise HTTPException(status_code=422, detail="Clip length must be between 5 and 300 seconds.")
     if mode == "cut":
@@ -247,6 +258,11 @@ async def create_job(
             raise HTTPException(status_code=422, detail="Cut end must be greater than cut start, and cut start cannot be negative.")
         if cut_end - cut_start > 3600:
             raise HTTPException(status_code=422, detail="A single cut cannot be longer than 60 minutes.")
+
+    if auto_publish and mode == "split" and clip_seconds > 60:
+        raise HTTPException(status_code=422, detail="For auto-publishing, Facebook Reel clips must be 60 seconds or shorter.")
+    if auto_publish and mode == "cut" and cut_end - cut_start > 60:
+        raise HTTPException(status_code=422, detail="For auto-publishing, the selected Reel range must be 60 seconds or shorter.")
 
     original_name = Path(video.filename or "video.mp4").name
     extension = Path(original_name).suffix.lower()
@@ -297,6 +313,10 @@ async def create_job(
         "clip_seconds": clip_seconds,
         "cut_start": cut_start,
         "cut_end": cut_end,
+        "processing_mode": processing_mode,
+        "auto_publish": auto_publish,
+        "auto_publish_page_id": selected_auto_page["id"] if selected_auto_page else None,
+        "caption_template": caption_template[:500],
         "clips": [],
         "publish_status": "not_started",
         "publish_progress": 0,
@@ -350,6 +370,7 @@ def process_video_job(job_id: str) -> None:
                 start_seconds=float(record.get("cut_start", 0)),
                 end_seconds=float(record.get("cut_end", 30)),
                 on_progress=progress,
+                processing_mode=str(record.get("processing_mode", "fast")),
             )
         else:
             clips = split_video(
@@ -357,10 +378,13 @@ def process_video_job(job_id: str) -> None:
                 output_dir,
                 on_progress=progress,
                 clip_seconds=int(record.get("clip_seconds", CLIP_SECONDS)),
+                processing_mode=str(record.get("processing_mode", "fast")),
             )
         for clip in clips:
             clip["url"] = f"/api/jobs/{job_id}/clips/{clip['filename']}"
         _job_update(job_id, status="completed", progress=100, clips=clips)
+        if record.get("auto_publish"):
+            auto_publish_completed_job(job_id)
     except (VideoProcessingError, OSError, ValueError) as exc:
         _job_update(job_id, status="error", error=str(exc)[:1500], progress=0)
 
@@ -413,6 +437,91 @@ def get_clip(job_id: str, filename: str, download: bool = False):
     )
 
 
+def auto_publish_completed_job(job_id: str) -> None:
+    """Publish clips after processing only when the user explicitly enabled auto-publish."""
+    record = read_job(job_id)
+    if not record or not record.get("auto_publish"):
+        return
+
+    page_id = str(record.get("auto_publish_page_id") or "")
+    try:
+        page = page_with_token(page_id) if page_id else None
+    except Exception:
+        message = "Could not read the saved Facebook Page credentials. Reconnect Facebook and retry."
+        _job_update(job_id, publish_status="error", publish_error=message, publish_log=[])
+        return
+    clips = sorted(record.get("clips", []), key=lambda item: int(item.get("part", 0)))
+    if not page:
+        message = "The selected Facebook Page is no longer connected. Reconnect it and retry publishing."
+        log = [
+            {"part": int(clip.get("part", index + 1)), "filename": clip.get("filename", ""),
+             "status": "blocked", "message": message}
+            for index, clip in enumerate(clips)
+        ]
+        _job_update(job_id, publish_status="error", publish_error=message, publish_log=log)
+        return
+
+    too_long = [clip.get("part") for clip in clips if float(clip.get("duration", 0)) > 60]
+    if too_long:
+        message = (
+            "Facebook Reels need clips of 60 seconds or less. Too-long part(s): "
+            + ", ".join(map(str, too_long))
+            + ". Choose a shorter clip length and retry."
+        )
+        log = [
+            {"part": int(clip.get("part", index + 1)), "filename": clip.get("filename", ""),
+             "status": "failed" if float(clip.get("duration", 0)) > 60 else "blocked",
+             "message": "Clip exceeds 60 seconds." if float(clip.get("duration", 0)) > 60 else "Not published because another clip is too long."}
+            for index, clip in enumerate(clips)
+        ]
+        _job_update(job_id, publish_status="error", publish_error=message, publish_log=log)
+        return
+
+    too_short = [clip.get("part") for clip in clips if float(clip.get("duration", 0)) < 4]
+    if too_short:
+        message = (
+            "Facebook Reels need clips of at least 4 seconds. Too-short part(s): "
+            + ", ".join(map(str, too_short))
+            + ". Increase the clip length or use a longer selected range, then retry manually."
+        )
+        log = []
+        for index, clip in enumerate(clips):
+            part = int(clip.get("part", index + 1))
+            short = float(clip.get("duration", 0)) < 4
+            log.append({
+                "part": part,
+                "filename": clip.get("filename", ""),
+                "status": "failed" if short else "blocked",
+                "message": "Clip is shorter than 4 seconds." if short else "Not published because another clip is too short.",
+            })
+        _job_update(job_id, publish_status="error", publish_error=message, publish_log=log)
+        return
+
+    log = [
+        {
+            "part": int(clip.get("part", index + 1)),
+            "filename": clip.get("filename", ""),
+            "status": "queued",
+            "message": "Waiting to publish automatically after processing",
+        }
+        for index, clip in enumerate(clips)
+    ]
+    _job_update(
+        job_id,
+        publish_status="queued",
+        publish_progress=0,
+        publish_log=log,
+        publish_error=None,
+    )
+    publish_job(
+        job_id,
+        page["id"],
+        page["name"],
+        page["access_token"],
+        str(record.get("caption_template") or "Part {part} of {total}"),
+    )
+
+
 class PublishRequest(BaseModel):
     caption_template: str = Field(default="Part {part} of {total}", max_length=500)
 
@@ -427,6 +536,12 @@ def start_publish(job_id: str, payload: PublishRequest, background_tasks: Backgr
         raise HTTPException(
             status_code=409,
             detail=f"Facebook Reels need clips of at least 4 seconds. These part(s) are too short: {', '.join(map(str, too_short))}.",
+        )
+    too_long = [clip.get("part") for clip in record["clips"] if float(clip.get("duration", 0)) > 60]
+    if too_long:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Facebook Reels need clips of 60 seconds or less. These part(s) are too long: {', '.join(map(str, too_long))}.",
         )
     page = selected_page_with_token()
     if not page:
