@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101827"><title>Connect Facebook — Partly</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    .setup-page{max-width:850px;margin:0 auto;padding:38px 0 60px}
+    .setup-title{font-size:clamp(32px,5vw,49px);letter-spacing:-2px;line-height:1.1;margin:12px 0}
+    .setup-lead{color:#aab8cb;max-width:680px;line-height:1.8}
+    .setup-step{display:grid;grid-template-columns:36px 1fr;gap:14px;padding:19px 0;border-bottom:1px solid var(--line)}
+    .setup-number{width:32px;height:32px;border:1px solid #46556a;border-radius:9px;display:grid;place-items:center;color:var(--lime);font:12px var(--mono)}
+    .setup-step h2{font-size:16px;margin:1px 0 7px}.setup-step p,.setup-step li{font-size:12px;line-height:1.8;color:#a9b7ca}
+    .setup-step p{margin:6px 0}.setup-step ul{padding-left:19px;margin:7px 0}
+    .setup-code{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#090f18;border:1px solid #29384c;border-radius:10px;padding:12px;margin:12px 0;flex-wrap:wrap}
+    .setup-code code{font:11px var(--mono);color:var(--lime);overflow-wrap:anywhere}
+    .copy-btn{border:1px solid #43536a;background:#172438;color:#e8edf6;padding:7px 10px;border-radius:7px;font:11px var(--font);cursor:pointer}
+    .setup-alert{border:1px solid #5b6840;background:#1c281b;color:#cfe9a0;padding:13px 15px;border-radius:10px;font-size:12px;margin:19px 0}
+    .setup-danger{border-color:#5c3c40;background:#271b20;color:#efb4b4}
+    .setup-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}.setup-actions .button{min-width:180px}
+    @media(max-width:550px){.setup-page{padding-top:28px}.setup-code{align-items:flex-start;flex-direction:column}.setup-step{grid-template-columns:30px 1fr;gap:10px}}
+  </style>
+</head>
+<body><div class="app-shell">
+  <header class="topbar"><a class="brand" href="/"><span class="brand-mark">P</span><span>partly<span class="brand-dot">.</span></span></a>
+    <div class="topbar-right"><span class="local-indicator"><i></i> Local workspace</span><a class="text-link" href="/">Back to app ↗</a></div></header>
+  <main class="setup-page">
+    <div class="eyebrow"><span class="eyebrow-line"></span> ONE-TIME CONFIGURATION</div>
+    <h1 class="setup-title">Connect your<br><span>Facebook Page.</span></h1>
+    <p class="setup-lead">Partly uses Meta's official authorization flow. Sign in on Facebook, approve Page permissions, select a Page you manage, then queue clips for sequential publishing. Partly never asks for your Facebook password.</p>
+    {% if facebook_app_configured %}
+      <div class="setup-alert">Meta credentials are configured. Restart the app if you have just edited <code>.env</code>, then return to the home screen.</div>
+    {% else %}
+      <div class="setup-alert">Your Meta credentials are not configured yet. Complete these steps once on this computer.</div>
+    {% endif %}
+    <section class="panel">
+      <div class="setup-step"><span class="setup-number">01</span><div><h2>Create a Meta developer app</h2>
+        <p>Sign in using the Facebook account that manages your Page. Create an app/use case that supports Facebook Login and Page publishing. Copy the App ID and App Secret from its settings.</p>
+        <p><a class="text-link" href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">Open Meta apps dashboard ↗</a> · <a class="text-link" href="https://developers.meta.com/resources/" target="_blank" rel="noreferrer">Meta developer resources ↗</a></p></div></div>
+      <div class="setup-step"><span class="setup-number">02</span><div><h2>Register the OAuth callback</h2>
+        <p>Configure Facebook Login for Web. In its OAuth settings, register this exact callback URI when the dashboard asks for Valid OAuth Redirect URIs.</p>
+        <div class="setup-code"><code id="redirectUri">{{ redirect_uri }}</code><button class="copy-btn" id="copyRedirect" type="button">Copy callback URL</button></div></div></div>
+      <div class="setup-step"><span class="setup-number">03</span><div><h2>Make sure the app can publish to Pages</h2>
+        <p>Partly requests these permissions during Facebook authorization:</p>
+        <ul><li><code>pages_show_list</code> — list Pages you manage</li><li><code>pages_read_engagement</code> — Page context</li><li><code>pages_manage_posts</code> — publish Reels</li></ul>
+        <p>For Development mode testing, use an account added to the app as an administrator, developer, or tester. Public use may require Meta App Review and Advanced Access.</p>
+        <p><a class="text-link" href="https://www.postman.com/meta/facebook/documentation/r56bjfd/facebook-api" target="_blank" rel="noreferrer">Read Meta's Reels API collection ↗</a></p></div></div>
+      <div class="setup-step"><span class="setup-number">04</span><div><h2>Save the app credentials locally</h2>
+        <p>In the project folder, open <code>.env</code> in Notepad. If it doesn't exist, copy <code>.env.example</code> to <code>.env</code>. Fill in these values:</p>
+        <div class="setup-code"><code id="envTemplate">FACEBOOK_APP_ID=your_app_id_here<br>FACEBOOK_APP_SECRET=your_app_secret_here<br>FACEBOOK_REDIRECT_URI={{ redirect_uri }}<br>META_GRAPH_API_VERSION={{ graph_api_version }}</code><button class="copy-btn" id="copyEnv" type="button">Copy template</button></div>
+        <p>Replace both placeholders with your own values, save the file, and restart the server. Never commit the real <code>.env</code> file.</p></div></div>
+      <div class="setup-step"><span class="setup-number">05</span><div><h2>Connect and automate</h2>
+        <ul><li>Return to the home screen and click <b>Connect Facebook</b>.</li><li>Approve the requested permissions in Facebook's own authorization screen.</li><li>Select the Page you manage in the destination dropdown.</li><li>Upload a short video you own, wait for the numbered clips, then click <b>Publish all clips in order</b>.</li></ul>
+        <p>Partly uploads clips sequentially and stops if a part fails, rather than skipping later clips silently.</p></div></div>
+    </section>
+    <div class="setup-alert setup-danger"><b>Keep your App Secret private.</b> Never paste it into ChatGPT or commit it to GitHub. The project excludes <code>.env</code> and local <code>data/</code> files. Keep this app bound to localhost.</div>
+    <div class="setup-actions"><a class="button button-primary" href="/">Return to Partly <span class="button-arrow">↗</span></a><a class="button" href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">Open Meta dashboard ↗</a></div>
+  </main>
+  <footer><span>PARTLY <span class="brand-dot">/</span> FACEBOOK CONNECTION</span><span>Credentials stay on your machine</span></footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+  const toastElement = document.getElementById('toast');
+  function showToast(message) { toastElement.textContent = message; toastElement.classList.add('show'); window.setTimeout(() => toastElement.classList.remove('show'), 2500); }
+  document.getElementById('copyRedirect').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(document.getElementById('redirectUri').textContent); showToast('Callback URL copied.'); }
+    catch { showToast('Please select and copy the callback URL manually.'); }
+  });
+  document.getElementById('copyEnv').addEventListener('click', async () => {
+    const value = 'FACEBOOK_APP_ID=your_app_id_here\nFACEBOOK_APP_SECRET=your_app_secret_here\nFACEBOOK_REDIRECT_URI={{ redirect_uri }}\nMETA_GRAPH_API_VERSION={{ graph_api_version }}';
+    try { await navigator.clipboard.writeText(value); showToast('Template copied. Replace the placeholders in .env.'); }
+    catch { showToast('Copy the displayed template manually.'); }
+  });
+</script>
+</body></html>
