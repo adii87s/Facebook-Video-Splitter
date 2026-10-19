@@ -91,6 +91,19 @@ def index(request: Request):
     )
 
 
+@app.get("/setup")
+def setup_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="setup.html",
+        context={
+            "facebook_app_configured": bool(FACEBOOK_APP_ID and FACEBOOK_APP_SECRET),
+            "redirect_uri": FACEBOOK_REDIRECT_URI,
+            "graph_api_version": META_GRAPH_API_VERSION,
+        },
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
