@@ -57,6 +57,30 @@ def build_segments(duration: float, clip_seconds: int = CLIP_SECONDS) -> list[tu
         for index in range(total)
     ]
 
+def _render_profile(processing_mode: str) -> dict[str, object]:
+    """Return output dimensions and encoder settings for fast or high-quality rendering."""
+    if processing_mode == "fast":
+        return {"width": 720, "height": 1280, "preset": "ultrafast", "crf": "23", "blur": "12:6", "badge_offset": 24, "audio_bitrate": "96k"}
+    if processing_mode == "quality":
+        return {"width": 1080, "height": 1920, "preset": "veryfast", "crf": "22", "blur": "18:8", "badge_offset": 36, "audio_bitrate": "128k"}
+    raise ValueError("Processing mode must be 'fast' or 'quality'.")
+
+
+def _build_filter_graph(profile: dict[str, object]) -> str:
+    width = int(profile["width"])
+    height = int(profile["height"])
+    blur = str(profile["blur"])
+    badge_offset = int(profile["badge_offset"])
+    return (
+        "[0:v]split=2[foreground_source][background_source];"
+        f"[background_source]scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},boxblur={blur}[background];"
+        f"[foreground_source]scale={width}:{height}:force_original_aspect_ratio=decrease[foreground];"
+        "[background][foreground]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[base];"
+        f"[base][1:v]overlay=W-w-{badge_offset}:{badge_offset},format=yuv420p[video]"
+    )
+
+
 def _badge_image(path: Path, label: str) -> None:
     font_size = 42
     try:
@@ -84,7 +108,10 @@ def split_video(
     output_dir: Path,
     on_progress: ProgressCallback | None = None,
     clip_seconds: int = CLIP_SECONDS,
+    processing_mode: str = "fast",
 ) -> list[dict[str, object]]:
+    profile = _render_profile(processing_mode)
+    filter_graph = _build_filter_graph(profile)
     duration = get_duration(source_path)
     segments = build_segments(duration, clip_seconds=clip_seconds)
     total = len(segments)
@@ -102,14 +129,6 @@ def split_video(
 
         # Center the original video over a blurred, filled 9:16 background. This
         # keeps landscape movies watchable instead of cropping away their sides.
-        filter_graph = (
-            "[0:v]split=2[foreground_source][background_source];"
-            "[background_source]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,boxblur=18:8[background];"
-            "[foreground_source]scale=1080:1920:force_original_aspect_ratio=decrease[foreground];"
-            "[background][foreground]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[base];"
-            "[base][1:v]overlay=W-w-36:36,format=yuv420p[video]"
-        )
         command = [
             FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
             "-ss", f"{start:.3f}", "-i", str(source_path),
@@ -117,8 +136,8 @@ def split_video(
             "-t", f"{clip_duration:.3f}",
             "-filter_complex", filter_graph,
             "-map", "[video]", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+            "-c:v", "libx264", "-preset", str(profile["preset"]), "-crf", str(profile["crf"]),
+            "-c:a", "aac", "-b:a", str(profile["audio_bitrate"]), "-ar", "44100",
             "-r", "30", "-movflags", "+faststart", str(output_path),
         ]
         try:
@@ -144,8 +163,11 @@ def cut_video(
     start_seconds: float,
     end_seconds: float,
     on_progress: ProgressCallback | None = None,
+    processing_mode: str = "fast",
 ) -> list[dict[str, object]]:
     """Render one selected time range as a vertical MP4 clip."""
+    profile = _render_profile(processing_mode)
+    filter_graph = _build_filter_graph(profile)
     source_duration = get_duration(source_path)
     if start_seconds < 0 or start_seconds >= source_duration:
         raise VideoProcessingError("Cut start must be inside the source video's duration.")
@@ -161,14 +183,6 @@ def cut_video(
     output_path = output_dir / filename
     badge_path = output_dir / ".badge-clip.png"
     _badge_image(badge_path, "CLIP 1")
-    filter_graph = (
-        "[0:v]split=2[foreground_source][background_source];"
-        "[background_source]scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,boxblur=18:8[background];"
-        "[foreground_source]scale=1080:1920:force_original_aspect_ratio=decrease[foreground];"
-        "[background][foreground]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[base];"
-        "[base][1:v]overlay=W-w-36:36,format=yuv420p[video]"
-    )
     command = [
         FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
         "-ss", f"{float(start_seconds):.3f}", "-i", str(source_path),
@@ -176,8 +190,8 @@ def cut_video(
         "-t", f"{clip_duration:.3f}",
         "-filter_complex", filter_graph,
         "-map", "[video]", "-map", "0:a?",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+        "-c:v", "libx264", "-preset", str(profile["preset"]), "-crf", str(profile["crf"]),
+        "-c:a", "aac", "-b:a", str(profile["audio_bitrate"]), "-ar", "44100",
         "-r", "30", "-movflags", "+faststart", str(output_path),
     ]
     try:
