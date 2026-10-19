@@ -1,12 +1,12 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { job: null, timer: null, status: null };
+const state = { job: null, timer: null, status: null, publishRequestPending: false, autoPublishTriggeredJobId: null };
 const el = {
   form: $('#uploadForm'), file: $('#videoFile'), dropzone: $('#dropzone'), dropTitle: $('#dropTitle'), dropHint: $('#dropHint'),
   uploadLimit: $('#uploadLimit'), processButton: $('#processButton'), processingProgress: $('#processingProgress'), processingLabel: $('#processingLabel'),
   processingPercent: $('#processingPercent'), processingBar: $('#processingBar'), processingSubtext: $('#processingSubtext'),
   pageSelectWrap: $('#pageSelectWrap'), pageSelect: $('#pageSelect'), connectedCaption: $('#connectedCaption'), connectLabel: $('#connectLabel'),
   resultsPanel: $('#resultsPanel'), resultSubtitle: $('#resultSubtitle'), clipCount: $('#clipCount'), clipGrid: $('#clipGrid'),
-  publishButton: $('#publishButton'), publishHint: $('#publishHint'), captionTemplate: $('#captionTemplate'), publishingProgress: $('#publishingProgress'),
+  publishButton: $('#publishButton'), publishHint: $('#publishHint'), captionTemplate: $('#captionTemplate'), autoPublish: $('#autoPublish'), publishingProgress: $('#publishingProgress'),
   publishingLabel: $('#publishingLabel'), publishingPercent: $('#publishingPercent'), publishingBar: $('#publishingBar'), publishingSubtext: $('#publishingSubtext'),
   publishLog: $('#publishLog'), toast: $('#toast')
 };
@@ -39,7 +39,7 @@ function selectedPageReady() {
 function updatePublishButton() {
   const jobReady = state.job?.status === 'completed' && (state.job?.clips || []).length > 0;
   const publishing = ['queued', 'publishing', 'completed'].includes(state.job?.publish_status);
-  el.publishButton.disabled = !(jobReady && selectedPageReady()) || publishing;
+  el.publishButton.disabled = !(jobReady && selectedPageReady()) || publishing || state.publishRequestPending;
   if (!selectedPageReady()) el.publishHint.textContent = 'Connect Facebook and choose a Page to enable publishing.';
   else if (!jobReady) el.publishHint.textContent = 'Process a video to prepare the clips.';
   else if (state.job?.publish_status === 'completed') el.publishHint.textContent = 'All parts were submitted to Facebook.';
@@ -154,6 +154,7 @@ async function refreshJob() {
     updateProcessing();
     if (state.job.status === 'completed') drawClips();
     updatePublishing();
+    maybeAutoPublish();
     const stillProcessing = ['queued', 'processing'].includes(state.job.status);
     const stillPublishing = ['queued', 'publishing'].includes(state.job.publish_status);
     if (stillProcessing || stillPublishing) state.timer = setTimeout(refreshJob, 1500);
@@ -214,18 +215,46 @@ el.pageSelect.addEventListener('change', async () => {
     state.status.selected_page_id = result.selected_page_id;
     el.connectedCaption.textContent = 'Selected: ' + result.selected_page_name;
     updatePublishButton();
+    maybeAutoPublish();
     toast('Publishing destination set to ' + result.selected_page_name + '.');
   } catch (error) { toast(error.message); }
 });
-el.publishButton.addEventListener('click', async () => {
-  if (!state.job?.id) return;
-  el.publishButton.disabled = true;
+async function startPublishing(automatic = false) {
+  if (!state.job?.id || state.publishRequestPending) return;
+  const jobId = state.job.id;
+  state.publishRequestPending = true;
+  if (automatic || el.autoPublish.checked) state.autoPublishTriggeredJobId = jobId;
+  updatePublishButton();
   try {
-    state.job = await api('/api/jobs/' + state.job.id + '/publish', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({caption_template:el.captionTemplate.value || 'Part {part} of {total}'})});
+    state.job = await api('/api/jobs/' + jobId + '/publish', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({caption_template:el.captionTemplate.value || 'Part {part} of {total}'})
+    });
     updatePublishing();
     state.timer = setTimeout(refreshJob, 750);
-    toast('The clips have entered the publishing queue.');
-  } catch (error) { updatePublishButton(); toast(error.message); }
+    toast(automatic ? 'Clips are ready. Automatic publishing has started.' : 'The clips have entered the publishing queue.');
+  } catch (error) {
+    if (automatic) state.autoPublishTriggeredJobId = null;
+    toast(error.message);
+    updatePublishButton();
+  } finally {
+    state.publishRequestPending = false;
+    updatePublishButton();
+  }
+}
+function maybeAutoPublish() {
+  if (!el.autoPublish?.checked || !state.job?.id || !selectedPageReady()) return;
+  if (state.job.status !== 'completed') return;
+  const publishStatus = state.job.publish_status || 'not_started';
+  if (!['not_started', 'error'].includes(publishStatus)) return;
+  if (state.autoPublishTriggeredJobId === state.job.id || state.publishRequestPending) return;
+  startPublishing(true);
+}
+el.publishButton.addEventListener('click', () => startPublishing(false));
+el.autoPublish.addEventListener('change', () => {
+  if (!el.autoPublish.checked) state.autoPublishTriggeredJobId = null;
+  else maybeAutoPublish();
 });
 
 loadStatus().catch(error => toast(error.message));
