@@ -11,7 +11,7 @@ This is a **local development setup** for publishing Reels to a Facebook Page yo
 
 ## 2. Configure Facebook Login
 
-Configure Facebook Login for the Web and enter this exact development callback URI when asked for Valid OAuth Redirect URIs:
+Configure Facebook Login for the Web, enable Client OAuth Login and Web OAuth Login if those settings are shown, and enter this exact development callback URI under Valid OAuth Redirect URIs:
 
 ```text
 http://localhost:8000/auth/facebook/callback
