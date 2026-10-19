@@ -72,6 +72,8 @@ def test_manual_cut_uses_requested_start_and_duration(monkeypatch, tmp_path: Pat
     assert clips[0]["duration"] == 11.5
     assert "12.500" in seen_commands[0]
     assert "11.500" in seen_commands[0]
+    assert "scale=720:1280" in " ".join(seen_commands[0])
+    assert "ultrafast" in seen_commands[0]
 
 
 
