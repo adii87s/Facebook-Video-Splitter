@@ -406,7 +406,7 @@ def publish_job(job_id: str, page_id: str, page_name: str, page_token: str, capt
                 title=f"Part {part} of {total}",
             )
             if index < len(log):
-                log[index].update(status="published", message="Submitted to Facebook", video_id=result.get("video_id"))
+                log[index].update(status="submitted", message="Facebook accepted the publish request", video_id=result.get("video_id"))
             _job_update(
                 job_id,
                 publish_log=log,
