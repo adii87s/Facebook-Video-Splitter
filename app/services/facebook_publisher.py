@@ -75,6 +75,7 @@ def publish_reel(
             "Authorization": f"OAuth {page_access_token}",
             "offset": "0",
             "file_size": str(clip_path.stat().st_size),
+            "Content-Length": str(clip_path.stat().st_size),
             "Content-Type": "application/octet-stream",
         }
         upload_response = client.post(
