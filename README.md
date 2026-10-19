@@ -53,7 +53,7 @@ Keep the PowerShell window open while using the tool.
 4. Click **Create clips** or **Cut selected range**.
 5. Preview the results. Download an individual MP4 or click **Download all clips (ZIP)**.
 6. To publish, connect Facebook, choose a Page you manage, enter a caption template, and click **Publish all clips in order**. Partly asks for confirmation before creating posts.
-7. If you prefer, download the clips and upload them manually anywhere you like..
+7. If you prefer, download the clips and upload them manually anywhere you like.
 
 The app reframes clips into vertical 9:16 MP4s. If you want landscape output without the vertical background, the video processor's FFmpeg filter can be adjusted.
 
