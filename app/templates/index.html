@@ -67,7 +67,7 @@
         <div class="panel-head results-head"><div><span class="step-kicker">STEP 03</span><h2>Your clip lineup</h2><p class="panel-subtitle" id="resultSubtitle">Numbered clips, ready to review.</p></div><span class="clip-count" id="clipCount">0 clips</span></div>
         <div class="clip-grid" id="clipGrid"></div>
         <div class="publish-tools">
-          <div class="caption-field"><label for="captionTemplate">Post caption template</label><input id="captionTemplate" maxlength="500" value="Part {part} of {total}" placeholder="Part {part} of {total}"><small>Use <code>{part}</code> and <code>{total}</code> to insert part numbers.</small></div>
+          <div class="caption-field"><label for="captionTemplate">Post caption template</label><input id="captionTemplate" maxlength="500" value="Part {part} of {total}" placeholder="Part {part} of {total}"><small>Use <code>{part}</code> and <code>{total}</code> to insert part numbers.</small><div class="auto-publish-row"><label><input id="autoPublish" type="checkbox"><span>Automatically publish when splitting finishes</span></label></div></div>
           <div class="publish-action"><button class="button button-primary" id="publishButton" disabled><span>Publish all clips in order</span><span class="button-arrow">↗</span></button><span class="publish-hint" id="publishHint">Connect Facebook and choose a Page to enable publishing.</span></div>
         </div>
         <div class="workflow-progress hidden" id="publishingProgress"><div class="progress-copy"><span id="publishingLabel">Publishing clips…</span><strong id="publishingPercent">0%</strong></div><div class="progress-track"><span id="publishingBar"></span></div><p id="publishingSubtext">Each clip is submitted before the next one begins.</p></div>
