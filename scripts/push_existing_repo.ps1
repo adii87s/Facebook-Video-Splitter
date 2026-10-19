@@ -22,7 +22,7 @@ try {
 
   # Copy project sources but never copy local credentials, Git history, virtual
   # environments, generated clips, databases, or other local runtime data.
-  robocopy $ProjectPath $TempPath /E /R:2 /W:1 /XD .git .venv data __pycache__ .pytest_cache .mypy_cache .ruff_cache /XF .env
+  robocopy $ProjectPath $TempPath /E /R:2 /W:1 /XD .git .venv data __pycache__ .pytest_cache .mypy_cache .ruff_cache /XF .env create_repo.ps1
   if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
 
   Push-Location $TempPath
