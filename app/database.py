@@ -86,15 +86,20 @@ def select_page(page_id: str) -> bool:
     return True
 
 
-def selected_page_with_token() -> dict[str, str] | None:
-    page_id = get_setting("selected_page_id")
-    if not page_id:
-        return None
+def page_with_token(page_id: str) -> dict[str, str] | None:
+    """Return one connected Page and its decrypted token by Page ID."""
     with _connect() as conn:
         row = conn.execute(
-            "SELECT page_id, name, encrypted_token FROM pages WHERE page_id=?", (page_id,)
+            "SELECT page_id, name, encrypted_token FROM pages WHERE page_id=?", (str(page_id),)
         ).fetchone()
     if row is None:
         return None
     token = TOKEN_CIPHER.decrypt(row["encrypted_token"].encode("ascii")).decode("utf-8")
     return {"id": row["page_id"], "name": row["name"], "access_token": token}
+
+
+def selected_page_with_token() -> dict[str, str] | None:
+    page_id = get_setting("selected_page_id")
+    if not page_id:
+        return None
+    return page_with_token(page_id)
