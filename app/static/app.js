@@ -125,8 +125,8 @@ function drawPublishLog() {
   }
   el.publishLog.classList.remove('hidden');
   el.publishLog.innerHTML = logs.map(item => {
-    const cls = item.status === 'published' ? 'published' : item.status === 'failed' ? 'failed' : '';
-    const icon = item.status === 'published' ? '✓' : item.status === 'failed' ? '!' : item.status === 'publishing' ? '↗' : '·';
+    const cls = ['published', 'submitted'].includes(item.status) ? 'published' : item.status === 'failed' ? 'failed' : '';
+    const icon = ['published', 'submitted'].includes(item.status) ? '✓' : item.status === 'failed' ? '!' : item.status === 'publishing' ? '↗' : '·';
     return '<div class="publish-log-row"><span class="publish-status-icon ' + cls + '">' + icon +
       '</span><div><strong>Part ' + escapeHtml(item.part) + ' — ' + escapeHtml(item.status) +
       '</strong><p>' + escapeHtml(item.message || '') + '</p></div></div>';
