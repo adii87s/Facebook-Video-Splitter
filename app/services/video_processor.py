@@ -44,29 +44,18 @@ def get_duration(video_path: Path) -> float:
     return duration
 
 
-def build_segments(duration: float, clip_seconds: int = CLIP_SECONDS, minimum_reel_seconds: float = 4.0) -> list[tuple[float, float]]:
-    """Create <=60s segments and avoid an API-invalid tiny final Reel when possible.
-
-    If the remaining tail would be shorter than four seconds, move the previous
-    boundary so the last segment is four seconds. A source shorter than four
-    seconds cannot be made publishable without adding/duplicating content.
-    """
+def build_segments(duration: float, clip_seconds: int = CLIP_SECONDS) -> list[tuple[float, float]]:
+    """Create consecutive clips without changing the requested cut boundaries."""
     if duration <= 0 or clip_seconds <= 0:
         raise ValueError("Duration and clip length must be positive")
     total = math.ceil(duration / clip_seconds)
-    segments = [
-        (float(index * clip_seconds), min(float(clip_seconds), max(0.0, duration - index * clip_seconds)))
+    return [
+        (
+            float(index * clip_seconds),
+            min(float(clip_seconds), max(0.0, duration - index * clip_seconds)),
+        )
         for index in range(total)
     ]
-    if len(segments) > 1 and 0 < segments[-1][1] < minimum_reel_seconds:
-        final_start = duration - minimum_reel_seconds
-        previous_start = segments[-2][0]
-        previous_duration = final_start - previous_start
-        if previous_duration > 0:
-            segments[-2] = (previous_start, previous_duration)
-            segments[-1] = (final_start, minimum_reel_seconds)
-    return segments
-
 
 def _badge_image(path: Path, label: str) -> None:
     font_size = 42
