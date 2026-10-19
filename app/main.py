@@ -126,8 +126,8 @@ def api_status() -> dict[str, Any]:
 @app.get("/auth/facebook/login")
 def facebook_login(request: Request):
     if not FACEBOOK_APP_ID or not FACEBOOK_APP_SECRET:
-        request.session["notice"] = "Add FACEBOOK_APP_ID and FACEBOOK_APP_SECRET to .env before connecting Facebook."
-        return RedirectResponse(url="/", status_code=303)
+        request.session["notice"] = "Complete the one-time Meta setup first, then return to connect Facebook."
+        return RedirectResponse(url="/setup", status_code=303)
     state = secrets.token_urlsafe(32)
     request.session["fb_oauth_state"] = state
     params = {
