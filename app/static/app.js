@@ -53,8 +53,16 @@ function selectedPageName() {
 async function loadStatus() {
   state.status = await api('/api/status');
   el.uploadLimit.textContent = 'Maximum upload size: ' + state.status.max_upload_mb + ' MiB';
-  el.connectLabel.textContent = state.status.facebook_connected ? 'Facebook connected · manage Pages' : 'Connect Facebook';
-  if (state.status.facebook_app_configured) $('#connectFacebook').classList.remove('is-unconfigured');
+  const connectFacebook = $('#connectFacebook');
+  if (state.status.facebook_app_configured) {
+    connectFacebook.href = '/auth/facebook/login';
+    connectFacebook.classList.remove('is-unconfigured');
+    el.connectLabel.textContent = state.status.facebook_connected ? 'Facebook connected · reconnect' : 'Connect Facebook';
+  } else {
+    connectFacebook.href = '/setup';
+    connectFacebook.classList.add('is-unconfigured');
+    el.connectLabel.textContent = 'Finish Facebook setup first';
+  }
   if (state.status.pages?.length) {
     el.pageSelectWrap.classList.remove('hidden');
     el.pageSelect.innerHTML = '<option value="">Choose a Facebook Page…</option>' + state.status.pages.map(page =>
