@@ -7,11 +7,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import zipfile
 from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -34,7 +35,7 @@ from app.config import (
 from app.database import init_db, list_pages, save_pages, select_page, selected_page_with_token
 from app.job_store import job_dir, public_job, read_job, write_job
 from app.services.facebook_publisher import FacebookPublishError, publish_reel
-from app.services.video_processor import VideoProcessingError, split_video
+from app.services.video_processor import VideoProcessingError, cut_video, split_video
 
 app = FastAPI(title="Facebook Video Splitter", version="0.1.0")
 app.add_middleware(
@@ -229,7 +230,24 @@ def select_facebook_page(payload: SelectPageRequest) -> dict[str, str]:
 
 
 @app.post("/api/jobs")
-async def create_job(background_tasks: BackgroundTasks, video: UploadFile = File(...)) -> dict[str, Any]:
+async def create_job(
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...),
+    mode: str = Form("split"),
+    clip_seconds: int = Form(CLIP_SECONDS),
+    cut_start: float = Form(0),
+    cut_end: float = Form(30),
+) -> dict[str, Any]:
+    if mode not in {"split", "cut"}:
+        raise HTTPException(status_code=422, detail="Choose either split into parts or cut a selected range.")
+    if mode == "split" and not 5 <= clip_seconds <= 300:
+        raise HTTPException(status_code=422, detail="Clip length must be between 5 and 300 seconds.")
+    if mode == "cut":
+        if cut_start < 0 or cut_end <= cut_start:
+            raise HTTPException(status_code=422, detail="Cut end must be greater than cut start, and cut start cannot be negative.")
+        if cut_end - cut_start > 3600:
+            raise HTTPException(status_code=422, detail="A single cut cannot be longer than 60 minutes.")
+
     original_name = Path(video.filename or "video.mp4").name
     extension = Path(original_name).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
@@ -275,7 +293,10 @@ async def create_job(background_tasks: BackgroundTasks, video: UploadFile = File
         "source_path": str(source_path),
         "status": "queued",
         "progress": 0,
-        "clip_seconds": CLIP_SECONDS,
+        "mode": mode,
+        "clip_seconds": clip_seconds,
+        "cut_start": cut_start,
+        "cut_end": cut_end,
         "clips": [],
         "publish_status": "not_started",
         "publish_progress": 0,
@@ -305,7 +326,11 @@ def process_video_job(job_id: str) -> None:
             "part": part,
             "filename": clip_path.name,
             "duration": round(duration, 3),
-            "start_seconds": (part - 1) * CLIP_SECONDS,
+            "start_seconds": (
+                float(current.get("cut_start", 0))
+                if current.get("mode") == "cut"
+                else (part - 1) * int(current.get("clip_seconds", CLIP_SECONDS))
+            ),
             "url": f"/api/jobs/{job_id}/clips/{clip_path.name}",
             "publish_status": "not_started",
         }
@@ -318,7 +343,21 @@ def process_video_job(job_id: str) -> None:
         write_job(job_id, current)
 
     try:
-        clips = split_video(source_path, output_dir, on_progress=progress)
+        if record.get("mode") == "cut":
+            clips = cut_video(
+                source_path,
+                output_dir,
+                start_seconds=float(record.get("cut_start", 0)),
+                end_seconds=float(record.get("cut_end", 30)),
+                on_progress=progress,
+            )
+        else:
+            clips = split_video(
+                source_path,
+                output_dir,
+                on_progress=progress,
+                clip_seconds=int(record.get("clip_seconds", CLIP_SECONDS)),
+            )
         for clip in clips:
             clip["url"] = f"/api/jobs/{job_id}/clips/{clip['filename']}"
         _job_update(job_id, status="completed", progress=100, clips=clips)
@@ -330,6 +369,31 @@ def process_video_job(job_id: str) -> None:
 def get_job(job_id: str) -> dict[str, Any]:
     record = _require_job(job_id)
     return public_job(record)
+
+
+@app.get("/api/jobs/{job_id}/download-all")
+def download_all_clips(job_id: str):
+    record = _require_job(job_id)
+    if record.get("status") != "completed" or not record.get("clips"):
+        raise HTTPException(status_code=409, detail="Clips are not ready to download yet.")
+    zip_path = job_dir(job_id) / "all-clips.zip"
+    clips_dir = job_dir(job_id) / "clips"
+    try:
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for clip in sorted(record["clips"], key=lambda item: int(item.get("part", 0))):
+                filename = str(clip.get("filename", ""))
+                if not filename.endswith(".mp4") or Path(filename).name != filename:
+                    continue
+                clip_path = clips_dir / filename
+                if clip_path.is_file():
+                    archive.write(clip_path, arcname=filename)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="Could not package the clips into a ZIP file.") from exc
+    if not zip_path.is_file() or zip_path.stat().st_size == 0:
+        raise HTTPException(status_code=404, detail="No generated clips were found.")
+    base_name = Path(str(record.get("source_name", "video"))).stem
+    safe_name = "".join(character if character.isalnum() or character in "-_" else "-" for character in base_name).strip("-_") or "video"
+    return FileResponse(zip_path, media_type="application/zip", filename=f"{safe_name}-clips.zip")
 
 
 @app.get("/api/jobs/{job_id}/clips/{filename}")
