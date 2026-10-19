@@ -9,9 +9,9 @@ def test_segments_are_max_one_minute():
     assert all(duration <= 60 for _, duration in segments)
 
 
-def test_tiny_final_tail_is_moved_to_four_seconds():
+def test_tiny_final_tail_keeps_exact_split_boundary():
     segments = build_segments(121.5)
-    assert segments == [(0.0, 60.0), (60.0, 57.5), (117.5, 4.0)]
+    assert segments == [(0.0, 60.0), (60.0, 60.0), (120.0, 1.5)]
 
 
 def test_short_source_stays_short_for_preview():
@@ -37,9 +37,9 @@ def test_custom_clip_length_keeps_all_source_seconds():
     assert len(segments) == 7
 
 
-def test_short_final_part_is_adjusted_for_custom_split_length():
+def test_custom_split_length_preserves_short_final_part():
     segments = build_segments(62.0, clip_seconds=15)
-    assert segments[-1][1] == 4.0
+    assert segments == [(0.0, 15.0), (15.0, 15.0), (30.0, 15.0), (45.0, 15.0), (60.0, 2.0)]
     assert sum(duration for _, duration in segments) == 62.0
 
 
