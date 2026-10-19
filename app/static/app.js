@@ -408,6 +408,18 @@ el.form.addEventListener('submit', async event => {
   const processingMode = el.processingMode.value;
   const autoPublish = el.autoPublish.checked;
 
+  if (activeMode === 'split' && (!Number.isInteger(clipSeconds) || clipSeconds < 5 || clipSeconds > 300)) {
+    return toast('Clip length must be a whole number between 5 and 300 seconds.');
+  }
+  if (activeMode === 'cut' && (!Number.isFinite(cutStart) || !Number.isFinite(cutEnd) || cutStart < 0 || cutEnd <= cutStart)) {
+    return toast('Cut end must be later than cut start.');
+  }
+  if (autoPublish && activeMode === 'split' && clipSeconds > 60) {
+    return toast('For auto-publishing, set each clip to 60 seconds or less.');
+  }
+  if (autoPublish && activeMode === 'cut' && cutEnd - cutStart > 60) {
+    return toast('For auto-publishing, the selected Reel range must be 60 seconds or less.');
+  }
   if (autoPublish) {
     if (!state.status?.selected_page_id) {
       return toast('Connect Facebook and choose a Page before enabling auto-publish.');
@@ -421,12 +433,6 @@ el.form.addEventListener('submit', async event => {
       destination + '" in order. This creates posts on Facebook. Continue?'
     );
     if (!confirmed) return;
-  }
-  if (activeMode === 'split' && (!Number.isInteger(clipSeconds) || clipSeconds < 5 || clipSeconds > 300)) {
-    return toast('Clip length must be a whole number between 5 and 300 seconds.');
-  }
-  if (activeMode === 'cut' && (!Number.isFinite(cutStart) || !Number.isFinite(cutEnd) || cutStart < 0 || cutEnd <= cutStart)) {
-    return toast('Cut end must be later than cut start.');
   }
 
   clearTimeout(state.timer);
