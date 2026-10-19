@@ -148,3 +148,63 @@ def split_video(
         if on_progress:
             on_progress(part, total, output_path, clip_duration)
     return clips
+
+def cut_video(
+    source_path: Path,
+    output_dir: Path,
+    start_seconds: float,
+    end_seconds: float,
+    on_progress: ProgressCallback | None = None,
+) -> list[dict[str, object]]:
+    """Render one selected time range as a vertical MP4 clip."""
+    source_duration = get_duration(source_path)
+    if start_seconds < 0 or start_seconds >= source_duration:
+        raise VideoProcessingError("Cut start must be inside the source video's duration.")
+    if end_seconds <= start_seconds:
+        raise VideoProcessingError("Cut end must be later than cut start.")
+    actual_end = min(float(end_seconds), source_duration)
+    clip_duration = actual_end - float(start_seconds)
+    if clip_duration <= 0:
+        raise VideoProcessingError("The selected cut range is empty.")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = "clip-001.mp4"
+    output_path = output_dir / filename
+    badge_path = output_dir / ".badge-clip.png"
+    _badge_image(badge_path, "CLIP 1")
+    filter_graph = (
+        "[0:v]split=2[foreground_source][background_source];"
+        "[background_source]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,boxblur=18:8[background];"
+        "[foreground_source]scale=1080:1920:force_original_aspect_ratio=decrease[foreground];"
+        "[background][foreground]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[base];"
+        "[base][1:v]overlay=W-w-36:36,format=yuv420p[video]"
+    )
+    command = [
+        FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
+        "-ss", f"{float(start_seconds):.3f}", "-i", str(source_path),
+        "-loop", "1", "-framerate", "30", "-i", str(badge_path),
+        "-t", f"{clip_duration:.3f}",
+        "-filter_complex", filter_graph,
+        "-map", "[video]", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+        "-r", "30", "-movflags", "+faststart", str(output_path),
+    ]
+    try:
+        _run(command)
+    finally:
+        badge_path.unlink(missing_ok=True)
+
+    clip = {
+        "part": 1,
+        "filename": filename,
+        "duration": round(clip_duration, 3),
+        "start_seconds": float(start_seconds),
+        "url": "/api/jobs/CLIP_JOB_ID/clips/" + filename,
+        "publish_status": "not_started",
+    }
+    if on_progress:
+        on_progress(1, 1, output_path, clip_duration)
+    return [clip]
+
