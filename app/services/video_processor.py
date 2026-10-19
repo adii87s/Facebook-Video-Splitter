@@ -1,0 +1,150 @@
+from __future__ import annotations
+
+import json
+import math
+import subprocess
+from pathlib import Path
+from typing import Callable
+
+from PIL import Image, ImageDraw, ImageFont
+
+from app.config import CLIP_SECONDS, FFMPEG_PATH, FFPROBE_PATH
+
+ProgressCallback = Callable[[int, int, Path, float], None]
+
+
+class VideoProcessingError(RuntimeError):
+    pass
+
+
+def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except FileNotFoundError as exc:
+        raise VideoProcessingError(
+            "FFmpeg or FFprobe was not found. Install FFmpeg and ensure ffmpeg.exe and ffprobe.exe are on PATH."
+        ) from exc
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout or "Unknown FFmpeg error")[-4000:]
+        raise VideoProcessingError(details)
+    return result
+
+
+def get_duration(video_path: Path) -> float:
+    result = _run([
+        FFPROBE_PATH, "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(video_path),
+    ])
+    try:
+        duration = float(result.stdout.strip())
+    except ValueError as exc:
+        raise VideoProcessingError("Could not read the duration of this video.") from exc
+    if not math.isfinite(duration) or duration <= 0:
+        raise VideoProcessingError("The uploaded video has no usable duration.")
+    return duration
+
+
+def build_segments(duration: float, clip_seconds: int = CLIP_SECONDS, minimum_reel_seconds: float = 4.0) -> list[tuple[float, float]]:
+    """Create <=60s segments and avoid an API-invalid tiny final Reel when possible.
+
+    If the remaining tail would be shorter than four seconds, move the previous
+    boundary so the last segment is four seconds. A source shorter than four
+    seconds cannot be made publishable without adding/duplicating content.
+    """
+    if duration <= 0 or clip_seconds <= 0:
+        raise ValueError("Duration and clip length must be positive")
+    total = math.ceil(duration / clip_seconds)
+    segments = [
+        (float(index * clip_seconds), min(float(clip_seconds), max(0.0, duration - index * clip_seconds)))
+        for index in range(total)
+    ]
+    if len(segments) > 1 and 0 < segments[-1][1] < minimum_reel_seconds:
+        final_start = duration - minimum_reel_seconds
+        previous_start = segments[-2][0]
+        previous_duration = final_start - previous_start
+        if previous_duration > 0:
+            segments[-2] = (previous_start, previous_duration)
+            segments[-1] = (final_start, minimum_reel_seconds)
+    return segments
+
+
+def _badge_image(path: Path, label: str) -> None:
+    font_size = 42
+    try:
+        font = ImageFont.truetype("arialbd.ttf", font_size)
+    except OSError:
+        try:
+            font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+        except OSError:
+            font = ImageFont.load_default()
+    probe = Image.new("RGBA", (8, 8), (0, 0, 0, 0)
+    )
+    probe_draw = ImageDraw.Draw(probe)
+    left, top, right, bottom = probe_draw.textbbox((0, 0), label, font=font, stroke_width=0)
+    pad_x, pad_y = 28, 18
+    width, height = right - left + 2 * pad_x, bottom - top + 2 * pad_y
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((0, 0, width - 1, height - 1), radius=18, fill=(12, 16, 26, 225))
+    draw.text((pad_x - left, pad_y - top), label, font=font, fill=(255, 255, 255, 255))
+    image.save(path)
+
+
+def split_video(
+    source_path: Path,
+    output_dir: Path,
+    on_progress: ProgressCallback | None = None,
+    clip_seconds: int = CLIP_SECONDS,
+) -> list[dict[str, object]]:
+    duration = get_duration(source_path)
+    segments = build_segments(duration, clip_seconds=clip_seconds)
+    total = len(segments)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    clips: list[dict[str, object]] = []
+
+    for index, (start, clip_duration) in enumerate(segments):
+        if clip_duration <= 0:
+            continue
+        part = index + 1
+        filename = f"part-{part:03d}.mp4"
+        output_path = output_dir / filename
+        badge_path = output_dir / f".badge-{part:03d}.png"
+        _badge_image(badge_path, f"PART {part}")
+
+        # Center the original video over a blurred, filled 9:16 background. This
+        # keeps landscape movies watchable instead of cropping away their sides.
+        filter_graph = (
+            "[0:v]split=2[foreground_source][background_source];"
+            "[background_source]scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,boxblur=18:8[background];"
+            "[foreground_source]scale=1080:1920:force_original_aspect_ratio=decrease[foreground];"
+            "[background][foreground]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[base];"
+            "[base][1:v]overlay=W-w-36:36,format=yuv420p[video]"
+        )
+        command = [
+            FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
+            "-ss", f"{start:.3f}", "-i", str(source_path),
+            "-loop", "1", "-framerate", "30", "-i", str(badge_path),
+            "-t", f"{clip_duration:.3f}",
+            "-filter_complex", filter_graph,
+            "-map", "[video]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+            "-r", "30", "-movflags", "+faststart", str(output_path),
+        ]
+        try:
+            _run(command)
+        finally:
+            badge_path.unlink(missing_ok=True)
+        clip = {
+            "part": part,
+            "filename": filename,
+            "duration": round(clip_duration, 3),
+            "start_seconds": start,
+            "url": f"/api/jobs/CLIP_JOB_ID/clips/{filename}",
+            "publish_status": "not_started",
+        }
+        clips.append(clip)
+        if on_progress:
+            on_progress(part, total, output_path, clip_duration)
+    return clips
