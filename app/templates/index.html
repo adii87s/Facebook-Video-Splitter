@@ -4,33 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101827">
-  <title>Partly — Facebook Video Splitter</title>
+  <title>Partly — Local Video Cutter</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="Partly home"><span class="brand-mark">P</span><span>partly<span class="brand-dot">.</span></span></a>
-      <div class="topbar-right"><span class="local-indicator"><i></i> Local workspace</span><a class="text-link" href="/setup">Facebook setup guide ↗</a></div>
+      <div class="topbar-right"><span class="local-indicator"><i></i> Runs on your PC</span><span class="local-only-label">No Facebook login needed</span></div>
     </header>
 
     {% if notice %}<div class="notice" id="serverNotice">{{ notice }}</div>{% endif %}
 
     <main>
       <section class="hero">
-        <div class="eyebrow"><span class="eyebrow-line"></span> VIDEO WORKFLOW, AUTOMATED</div>
-        <h1>One video in.<br><span>Every part ready.</span></h1>
-        <p class="hero-copy">Drop in a video. Partly cuts it into one-minute clips, adds a part number in the corner, and queues them to publish one after another on your Facebook Page.</p>
+        <div class="eyebrow"><span class="eyebrow-line"></span> YOUR CLIPS, YOUR CONTROL</div>
+        <h1>Drop a video.<br><span>Cut it your way.</span></h1>
+        <p class="hero-copy">Split a long video into numbered clips or cut one exact section by start and end time. Preview every result, download clips one by one, or get them all in a ZIP to upload manually wherever you want.</p>
         <div class="feature-row">
-          <div><span class="feature-icon">↔</span><span>60-second clips</span></div>
-          <div><span class="feature-icon">▣</span><span>Auto PART labels</span></div>
-          <div><span class="feature-icon">➜</span><span>Sequential publishing</span></div>
+          <div><span class="feature-icon">↔</span><span>Choose clip length</span></div>
+          <div><span class="feature-icon">⌁</span><span>Cut a selected range</span></div>
+          <div><span class="feature-icon">↓</span><span>Download MP4 or ZIP</span></div>
         </div>
       </section>
 
       <section class="workspace-grid">
         <div class="panel upload-panel">
-          <div class="panel-head"><div><span class="step-kicker">STEP 01</span><h2>Upload your video</h2></div><span class="step-index">01</span></div>
+          <div class="panel-head"><div><span class="step-kicker">STEP 01</span><h2>Add your video</h2></div><span class="step-index">01</span></div>
           <form id="uploadForm">
             <label class="dropzone" id="dropzone" for="videoFile">
               <input id="videoFile" name="video" type="file" accept="video/mp4,video/quicktime,video/x-matroska,video/x-msvideo,video/webm,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mpeg,.mpg" required>
@@ -39,45 +39,64 @@
               <span class="drop-hint" id="dropHint">MP4, MOV, MKV, AVI or WEBM</span>
               <span class="drop-limit" id="uploadLimit">Maximum upload size: loading…</span>
             </label>
-            <div class="processing-note"><span class="note-lock">✳</span><span>Your original and generated clips stay in this local workspace unless you publish them.</span></div>
-            <button class="button button-primary full-width" type="submit" id="processButton"><span>Make my clips</span><span class="button-arrow">↗</span></button>
+            <div class="source-preview-wrap hidden" id="sourcePreviewWrap">
+              <div class="source-preview-heading"><span>Original video</span><span id="sourceDurationLabel">Duration —</span></div>
+              <video id="sourcePreview" controls preload="metadata"></video>
+            </div>
+            <div class="processing-note"><span class="note-lock">✳</span><span>The original and edited clips stay in your local workspace. Nothing is uploaded to Facebook by this tool.</span></div>
+            <button class="button button-primary full-width" type="submit" id="processButton"><span>Create clips</span><span class="button-arrow">↗</span></button>
           </form>
+        </div>
+
+        <div class="panel options-panel">
+          <div class="panel-head"><div><span class="step-kicker">STEP 02</span><h2>Choose how to cut</h2></div><span class="step-index">02</span></div>
+          <div class="mode-choice">
+            <label class="mode-option" for="modeSplit"><input type="radio" id="modeSplit" name="modeChoice" value="split" checked><span class="mode-option-copy"><strong>Split into parts</strong><small>Cut the full video into equal-length clips.</small></span></label>
+            <label class="mode-option" for="modeCut"><input type="radio" id="modeCut" name="modeChoice" value="cut"><span class="mode-option-copy"><strong>Cut a selected range</strong><small>Keep just one section using its start and end time.</small></span></label>
+          </div>
+
+          <div id="splitSettings" class="cut-settings">
+            <label for="clipSeconds">Length of each clip</label>
+            <div class="field-with-unit"><input id="clipSeconds" type="number" min="5" max="300" step="1" value="60"><span>seconds</span></div>
+            <p class="field-hint">Choose from 5 to 300 seconds. For 60-second parts, leave the value at 60.</p>
+          </div>
+
+          <div id="cutSettings" class="cut-settings hidden">
+            <div class="cut-time-grid">
+              <div><label for="cutStart">Start at</label><div class="field-with-unit"><input id="cutStart" type="number" min="0" step="0.1" value="0"><span>sec</span></div></div>
+              <div><label for="cutEnd">End at</label><div class="field-with-unit"><input id="cutEnd" type="number" min="0.1" step="0.1" value="30"><span>sec</span></div></div>
+            </div>
+            <p class="field-hint">The end time is exclusive. If it exceeds the video's duration, the cut stops at the end of the video.</p>
+          </div>
+
+          <div class="output-info">
+            <div class="output-info-icon">9:16</div>
+            <div><strong>Vertical MP4 output</strong><p>Portrait layout with a soft blurred background for landscape videos. Each part gets a small PART label.</p></div>
+          </div>
           <div class="workflow-progress hidden" id="processingProgress">
             <div class="progress-copy"><span id="processingLabel">Preparing video…</span><strong id="processingPercent">0%</strong></div>
             <div class="progress-track"><span id="processingBar"></span></div>
-            <p id="processingSubtext">This can take a while for large videos.</p>
+            <p id="processingSubtext">Keep this browser tab open while your video is processed.</p>
           </div>
-        </div>
-
-        <div class="panel facebook-panel">
-          <div class="panel-head"><div><span class="step-kicker">STEP 02</span><h2>Connect Facebook</h2></div><span class="step-index">02</span></div>
-          <div class="fb-intro"><span class="fb-logo">f</span><div><strong>Publish to a Page you manage</strong><p>Sign in through Facebook's official authorization screen. Your Facebook password is never entered into this app.</p></div></div>
-          <a class="button button-facebook full-width" href="/auth/facebook/login" id="connectFacebook"><span class="fb-button-mark">f</span><span id="connectLabel">Connect Facebook</span><span class="button-arrow">↗</span></a>
-          <div class="page-select-wrap hidden" id="pageSelectWrap"><label for="pageSelect">Publish destination</label><select id="pageSelect"><option value="">Choose a Facebook Page…</option></select><div class="connected-caption"><span class="connected-dot"></span><span id="connectedCaption">Choose the Page for these clips.</span></div></div>
-          <div class="permission-list">
-            <div><span class="check-dot">✓</span><span>Uses Meta's supported publishing API</span></div>
-            <div><span class="check-dot">✓</span><span>You choose which Page to publish to</span></div>
-            <div><span class="check-dot">✓</span><span>Clips are sent in part order</span></div>
-          </div>
-          <p class="api-footnote">A Meta developer app and the required Page permissions are needed. App Review may be required for production use.</p>
         </div>
       </section>
 
       <section class="panel results-panel hidden" id="resultsPanel">
-        <div class="panel-head results-head"><div><span class="step-kicker">STEP 03</span><h2>Your clip lineup</h2><p class="panel-subtitle" id="resultSubtitle">Numbered clips, ready to review.</p></div><span class="clip-count" id="clipCount">0 clips</span></div>
-        <div class="clip-grid" id="clipGrid"></div>
-        <div class="publish-tools">
-          <div class="caption-field"><label for="captionTemplate">Post caption template</label><input id="captionTemplate" maxlength="500" value="Part {part} of {total}" placeholder="Part {part} of {total}"><small>Use <code>{part}</code> and <code>{total}</code> to insert part numbers.</small><div class="auto-publish-row"><label><input id="autoPublish" type="checkbox"><span>Automatically publish when splitting finishes</span></label></div></div>
-          <div class="publish-action"><button class="button button-primary" id="publishButton" disabled><span>Publish all clips in order</span><span class="button-arrow">↗</span></button><span class="publish-hint" id="publishHint">Connect Facebook and choose a Page to enable publishing.</span></div>
+        <div class="panel-head results-head">
+          <div><span class="step-kicker">STEP 03</span><h2>Your clips are ready</h2><p class="panel-subtitle" id="resultSubtitle">Preview, then download your clips.</p></div>
+          <span class="clip-count" id="clipCount">0 clips</span>
         </div>
-        <div class="workflow-progress hidden" id="publishingProgress"><div class="progress-copy"><span id="publishingLabel">Publishing clips…</span><strong id="publishingPercent">0%</strong></div><div class="progress-track"><span id="publishingBar"></span></div><p id="publishingSubtext">Each clip is submitted before the next one begins.</p></div>
-        <div class="publish-log hidden" id="publishLog"></div>
+        <div class="clip-grid" id="clipGrid"></div>
+        <div class="download-all-row">
+          <div><strong>Ready to upload manually?</strong><p>Download one clip at a time or save everything in a single ZIP.</p></div>
+          <a class="button button-primary" href="#" id="downloadAll" aria-disabled="true"><span>Download all clips (ZIP)</span><span class="button-arrow">↓</span></a>
+        </div>
       </section>
 
-      <section class="disclaimer"><span class="disclaimer-mark">i</span><p><strong>Before publishing:</strong> only upload content you own or have permission to distribute. Splitting a copyrighted movie into parts does not remove copyright restrictions. Facebook may reject clips that don't meet its current publishing rules.</p></section>
+      <section class="disclaimer"><span class="disclaimer-mark">i</span><p><strong>Tip:</strong> Only edit and distribute videos you own or have permission to use. Video processing is done locally with FFmpeg; this app does not sign in to Facebook or publish anything for you.</p></section>
     </main>
 
-    <footer><span>PARTLY <span class="brand-dot">/</span> VIDEO TO CLIPS</span><span>Built for your local workflow</span></footer>
+    <footer><span>PARTLY <span class="brand-dot">/</span> LOCAL VIDEO CUTTER</span><span>Cut locally · Upload manually</span></footer>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/static/app.js" defer></script>
