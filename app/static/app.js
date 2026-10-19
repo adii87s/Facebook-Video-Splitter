@@ -12,7 +12,9 @@ const el = {
 };
 
 function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>\"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[char]));
+  return String(value ?? '').replace(/[&<>"']/g, function (char) {
+    return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char];
+  });
 }
 function toast(message) {
   el.toast.textContent = message;
@@ -24,12 +26,12 @@ async function api(url, options = {}) {
   const response = await fetch(url, options);
   const contentType = response.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await response.json() : {};
-  if (!response.ok) throw new Error(data.detail || data.message || `Request failed (${response.status})`);
+  if (!response.ok) throw new Error(data.detail || data.message || ('Request failed (' + response.status + ')'));
   return data;
 }
 function fmtDuration(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
 }
 function selectedPageReady() {
   return Boolean(state.status?.selected_page_id);
@@ -42,7 +44,7 @@ function updatePublishButton() {
   else if (!jobReady) el.publishHint.textContent = 'Process a video to prepare the clips.';
   else if (state.job?.publish_status === 'completed') el.publishHint.textContent = 'All parts were submitted to Facebook.';
   else if (['queued', 'publishing'].includes(state.job?.publish_status)) el.publishHint.textContent = 'Publishing is in progress. Keep this app running.';
-  else el.publishHint.textContent = `Ready to publish to ${selectedPageName()}.`;
+  else el.publishHint.textContent = 'Ready to publish to ' + selectedPageName() + '.';
 }
 function selectedPageName() {
   const page = (state.status?.pages || []).find(item => item.id === state.status.selected_page_id);
@@ -50,16 +52,16 @@ function selectedPageName() {
 }
 async function loadStatus() {
   state.status = await api('/api/status');
-  el.uploadLimit.textContent = `Maximum upload size: ${state.status.max_upload_mb} MiB`;
+  el.uploadLimit.textContent = 'Maximum upload size: ' + state.status.max_upload_mb + ' MiB';
   el.connectLabel.textContent = state.status.facebook_connected ? 'Facebook connected · manage Pages' : 'Connect Facebook';
-  if (state.status.facebook_app_configured) {
-    $('#connectFacebook').classList.remove('is-unconfigured');
-  }
+  if (state.status.facebook_app_configured) $('#connectFacebook').classList.remove('is-unconfigured');
   if (state.status.pages?.length) {
     el.pageSelectWrap.classList.remove('hidden');
-    el.pageSelect.innerHTML = '<option value=\"\">Choose a Facebook Page…</option>' + state.status.pages.map(page => `<option value=\"${escapeHtml(page.id)}\">${escapeHtml(page.name)}</option>`).join('');
+    el.pageSelect.innerHTML = '<option value="">Choose a Facebook Page…</option>' + state.status.pages.map(page =>
+      '<option value="' + escapeHtml(page.id) + '">' + escapeHtml(page.name) + '</option>'
+    ).join('');
     el.pageSelect.value = state.status.selected_page_id || '';
-    el.connectedCaption.textContent = state.status.selected_page_id ? `Selected: ${selectedPageName()}` : 'Choose the Page for these clips.';
+    el.connectedCaption.textContent = state.status.selected_page_id ? 'Selected: ' + selectedPageName() : 'Choose the Page for these clips.';
   } else {
     el.pageSelectWrap.classList.add('hidden');
   }
@@ -69,8 +71,8 @@ function updateProcessing() {
   if (!state.job) return;
   el.processingProgress.classList.remove('hidden');
   const percent = Number(state.job.progress || 0);
-  el.processingPercent.textContent = `${percent}%`;
-  el.processingBar.style.width = `${percent}%`;
+  el.processingPercent.textContent = percent + '%';
+  el.processingBar.style.width = percent + '%';
   if (state.job.status === 'queued') {
     el.processingLabel.textContent = 'Waiting to process…';
     el.processingSubtext.textContent = 'The upload is queued on this computer.';
@@ -79,7 +81,7 @@ function updateProcessing() {
     el.processingSubtext.textContent = 'Each clip is reframed for vertical video and labelled automatically.';
   } else if (state.job.status === 'completed') {
     el.processingLabel.textContent = 'Your clips are ready';
-    el.processingSubtext.textContent = `${state.job.clips.length} clip(s) created from ${state.job.source_name}.`;
+    el.processingSubtext.textContent = state.job.clips.length + ' clip(s) created from ' + state.job.source_name + '.';
     el.processingBar.style.width = '100%';
     el.processingPercent.textContent = '100%';
     el.processButton.disabled = false;
@@ -93,17 +95,17 @@ function updateProcessing() {
 function drawClips() {
   if (!state.job?.clips?.length) return;
   el.resultsPanel.classList.remove('hidden');
-  el.clipCount.textContent = `${state.job.clips.length} clip${state.job.clips.length === 1 ? '' : 's'}`;
-  el.resultSubtitle.textContent = `Created from ${state.job.source_name}. Review each part before publishing.`;
+  el.clipCount.textContent = state.job.clips.length + ' clip' + (state.job.clips.length === 1 ? '' : 's');
+  el.resultSubtitle.textContent = 'Created from ' + state.job.source_name + '. Review each part before publishing.';
   el.clipGrid.innerHTML = state.job.clips.map(clip => {
     const number = String(clip.part).padStart(2, '0');
     const src = escapeHtml(clip.url);
-    return `<article class=\"clip-card\">
-      <div class=\"clip-preview\"><video controls preload=\"metadata\" playsinline src=\"${src}\"></video><span class=\"clip-number\">PART ${clip.part}</span></div>
-      <div class=\"clip-card-body\"><div class=\"clip-card-top\"><strong>Part ${number}</strong><span class=\"clip-duration\">${fmtDuration(clip.duration)}</span></div>
-        <div class=\"clip-meta\">${escapeHtml(clip.filename)}</div>
-        <a class=\"download-link\" href=\"${src}?download=true\" download>Download MP4 ↗</a>
-      </div></article>`;
+    return '<article class="clip-card">' +
+      '<div class="clip-preview"><video controls preload="metadata" playsinline src="' + src + '"></video><span class="clip-number">PART ' + clip.part + '</span></div>' +
+      '<div class="clip-card-body"><div class="clip-card-top"><strong>Part ' + number + '</strong><span class="clip-duration">' + fmtDuration(clip.duration) + '</span></div>' +
+      '<div class="clip-meta">' + escapeHtml(clip.filename) + '</div>' +
+      '<a class="download-link" href="' + src + '?download=true" download>Download MP4 ↗</a>' +
+      '</div></article>';
   }).join('');
   updatePublishButton();
 }
@@ -117,7 +119,9 @@ function drawPublishLog() {
   el.publishLog.innerHTML = logs.map(item => {
     const cls = item.status === 'published' ? 'published' : item.status === 'failed' ? 'failed' : '';
     const icon = item.status === 'published' ? '✓' : item.status === 'failed' ? '!' : item.status === 'publishing' ? '↗' : '·';
-    return `<div class=\"publish-log-row\"><span class=\"publish-status-icon ${cls}\">${icon}</span><div><strong>Part ${escapeHtml(item.part)} — ${escapeHtml(item.status)}</strong><p>${escapeHtml(item.message || '')}</p></div></div>`;
+    return '<div class="publish-log-row"><span class="publish-status-icon ' + cls + '">' + icon +
+      '</span><div><strong>Part ' + escapeHtml(item.part) + ' — ' + escapeHtml(item.status) +
+      '</strong><p>' + escapeHtml(item.message || '') + '</p></div></div>';
   }).join('');
 }
 function updatePublishing() {
@@ -127,8 +131,8 @@ function updatePublishing() {
   const show = ['queued', 'publishing', 'completed', 'error'].includes(status) || (state.job.publish_log || []).length > 0;
   el.publishingProgress.classList.toggle('hidden', !show);
   if (show) {
-    el.publishingPercent.textContent = status === 'error' ? '!' : `${percent}%`;
-    el.publishingBar.style.width = `${percent}%`;
+    el.publishingPercent.textContent = status === 'error' ? '!' : percent + '%';
+    el.publishingBar.style.width = percent + '%';
     el.publishingLabel.textContent = status === 'completed' ? 'Publishing submitted' : status === 'error' ? 'Publishing stopped' : status === 'queued' ? 'Publishing queued…' : 'Publishing clips…';
     el.publishingSubtext.textContent = state.job.publish_error || (status === 'completed' ? 'Facebook accepted all publishing requests.' : 'Each part is uploaded before the next part begins.');
   }
@@ -138,7 +142,7 @@ function updatePublishing() {
 async function refreshJob() {
   if (!state.job?.id) return;
   try {
-    state.job = await api(`/api/jobs/${state.job.id}`);
+    state.job = await api('/api/jobs/' + state.job.id);
     updateProcessing();
     if (state.job.status === 'completed') drawClips();
     updatePublishing();
@@ -153,7 +157,7 @@ el.file.addEventListener('change', () => {
   const file = el.file.files?.[0];
   if (!file) return;
   el.dropTitle.textContent = file.name;
-  el.dropHint.textContent = `${(file.size / (1024 * 1024)).toFixed(1)} MiB · ready to split`;
+  el.dropHint.textContent = (file.size / (1024 * 1024)).toFixed(1) + ' MiB · ready to split';
 });
 for (const eventName of ['dragenter', 'dragover']) {
   el.dropzone.addEventListener(eventName, event => { event.preventDefault(); el.dropzone.classList.add('dragover'); });
@@ -164,18 +168,24 @@ for (const eventName of ['dragleave', 'drop']) {
 el.dropzone.addEventListener('drop', event => {
   const file = event.dataTransfer?.files?.[0];
   if (!file) return;
-  const transfer = new DataTransfer(); transfer.items.add(file); el.file.files = transfer.files; el.file.dispatchEvent(new Event('change'));
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  el.file.files = transfer.files;
+  el.file.dispatchEvent(new Event('change'));
 });
 el.form.addEventListener('submit', async event => {
   event.preventDefault();
   const file = el.file.files?.[0];
   if (!file) return toast('Choose a video file first.');
-  if (state.status && file.size > state.status.max_upload_mb * 1024 * 1024) return toast(`This file is larger than ${state.status.max_upload_mb} MiB.`);
+  if (state.status && file.size > state.status.max_upload_mb * 1024 * 1024) {
+    return toast('This file is larger than ' + state.status.max_upload_mb + ' MiB.');
+  }
   clearTimeout(state.timer);
   el.processButton.disabled = true;
   el.processButton.querySelector('span').textContent = 'Uploading…';
   try {
-    const formData = new FormData(); formData.append('video', file);
+    const formData = new FormData();
+    formData.append('video', file);
     state.job = await api('/api/jobs', {method:'POST', body:formData});
     el.resultsPanel.classList.add('hidden');
     el.processingProgress.classList.remove('hidden');
@@ -194,16 +204,16 @@ el.pageSelect.addEventListener('change', async () => {
   try {
     const result = await api('/api/facebook/select', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({page_id:el.pageSelect.value})});
     state.status.selected_page_id = result.selected_page_id;
-    el.connectedCaption.textContent = `Selected: ${result.selected_page_name}`;
+    el.connectedCaption.textContent = 'Selected: ' + result.selected_page_name;
     updatePublishButton();
-    toast(`Publishing destination set to ${result.selected_page_name}.`);
+    toast('Publishing destination set to ' + result.selected_page_name + '.');
   } catch (error) { toast(error.message); }
 });
 el.publishButton.addEventListener('click', async () => {
   if (!state.job?.id) return;
   el.publishButton.disabled = true;
   try {
-    state.job = await api(`/api/jobs/${state.job.id}/publish`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({caption_template:el.captionTemplate.value || 'Part {part} of {total}'})});
+    state.job = await api('/api/jobs/' + state.job.id + '/publish', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({caption_template:el.captionTemplate.value || 'Part {part} of {total}'})});
     updatePublishing();
     state.timer = setTimeout(refreshJob, 750);
     toast('The clips have entered the publishing queue.');
