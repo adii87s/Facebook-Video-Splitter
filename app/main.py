@@ -358,7 +358,7 @@ def process_video_job(job_id: str) -> None:
         clips.append(clip_record)
         clips.sort(key=lambda item: item["part"])
         current["clips"] = clips
-        current["progress"] = min(99, int(part / total * 100))
+        current["progress"] = min(99, int(len(clips) / total * 100))
         current["updated_at"] = _now()
         write_job(job_id, current)
 
