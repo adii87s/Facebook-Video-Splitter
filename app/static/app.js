@@ -40,10 +40,13 @@ function updatePublishButton() {
   const jobReady = state.job?.status === 'completed' && (state.job?.clips || []).length > 0;
   const publishing = ['queued', 'publishing', 'completed'].includes(state.job?.publish_status);
   el.publishButton.disabled = !(jobReady && selectedPageReady()) || publishing || state.publishRequestPending;
+  const buttonLabel = el.publishButton.querySelector('span');
+  if (buttonLabel) buttonLabel.textContent = state.job?.publish_status === 'error' ? 'Retry failed parts' : 'Publish all clips in order';
   if (!selectedPageReady()) el.publishHint.textContent = 'Connect Facebook and choose a Page to enable publishing.';
   else if (!jobReady) el.publishHint.textContent = 'Process a video to prepare the clips.';
   else if (state.job?.publish_status === 'completed') el.publishHint.textContent = 'All parts were submitted to Facebook.';
   else if (['queued', 'publishing'].includes(state.job?.publish_status)) el.publishHint.textContent = 'Publishing is in progress. Keep this app running.';
+  else if (state.job?.publish_status === 'error') el.publishHint.textContent = 'Retry will skip parts Facebook already accepted to avoid duplicate posts.';
   else el.publishHint.textContent = 'Ready to publish to ' + selectedPageName() + '.';
 }
 function selectedPageName() {
