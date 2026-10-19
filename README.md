@@ -1,18 +1,20 @@
 # Partly — Local Video Cutter & Facebook Page Publisher
 
-Partly runs on your Windows PC. Cut a long video into numbered portrait MP4 clips, preview them, then either download them or connect a Facebook Page you manage and publish the clips in order. Editing stays local; clips are sent to Meta only when you explicitly press **Publish all clips in order**.
+Partly runs on your Windows PC. Cut a long video into numbered portrait MP4 clips, preview them, then either download them or connect a Facebook Page you manage and publish the clips in order. The default Faster mode renders 720p vertical clips to reduce processing time; Higher quality mode keeps 1080p output. Editing stays local. Clips are sent to Meta only when you manually press **Publish all clips in order** or enable Auto-publish for a job and confirm the prompt.
 
 ## Features
 
 - Select a video file or drag it into the app.
 - **Split into parts:** choose a clip length from 5 to 300 seconds (60 seconds by default).
 - **Cut a selected range:** choose the exact start and end time to keep one section.
+- Choose Faster 720p output or Higher quality 1080p output.
 - Preview the source video and each result.
 - Output portrait 9:16 MP4 files with a blurred background behind landscape videos.
 - Automatically add a small `PART` or `CLIP` label.
 - Download clips individually or bundle all clips in one ZIP file.
 - Connect a Facebook Page using Meta's OAuth flow.
 - Select the destination Page and publish generated clips in sequence with a reusable caption template.
+- Optionally enable auto-publish for an individual job; after you confirm, clips publish to the selected Page immediately after editing completes.
 - Review publish progress and errors; publishing stops on the first failed clip and avoids reposting parts already accepted on retry.
 - Keep source videos, generated output, Page tokens, and other local state on your own machine.
 
