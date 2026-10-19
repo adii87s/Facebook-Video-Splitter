@@ -18,6 +18,8 @@ const el = {
   clipSeconds: $('#clipSeconds'),
   cutStart: $('#cutStart'),
   cutEnd: $('#cutEnd'),
+  processingMode: $('#processingMode'),
+  autoPublish: $('#autoPublish'),
   processButton: $('#processButton'),
   processingProgress: $('#processingProgress'),
   processingLabel: $('#processingLabel'),
@@ -87,7 +89,11 @@ function updateMode() {
   el.splitSettings.classList.toggle('hidden', cutMode);
   el.cutSettings.classList.toggle('hidden', !cutMode);
   const label = el.processButton.querySelector('span');
-  if (label) label.textContent = cutMode ? 'Cut selected range' : 'Create clips';
+  if (label) {
+    label.textContent = el.autoPublish?.checked
+      ? (cutMode ? 'Cut & auto-publish' : 'Create & auto-publish')
+      : (cutMode ? 'Cut selected range' : 'Create clips');
+  }
 }
 
 async function loadStatus() {
@@ -185,8 +191,10 @@ function updatePublishUI() {
     el.publishHint.textContent = 'Connect Facebook and approve Page publishing permissions.';
   } else if (!pageSelected) {
     el.publishHint.textContent = 'Choose a Page above and click Use this Page.';
+  } else if (job?.auto_publish && ['queued', 'processing'].includes(job.status) && publishStatus === 'not_started') {
+    el.publishHint.textContent = 'Auto-publish is enabled. Your clips will be sent to ' + pageName + ' when editing finishes.';
   } else if (!ready) {
-    el.publishHint.textContent = 'Create your clips first. Nothing publishes automatically.';
+    el.publishHint.textContent = 'Create your clips first. Nothing publishes unless you press Publish or enable auto-publish for a job.';
   } else if (busy) {
     el.publishHint.textContent = 'Publishing to ' + pageName + ' in order. The queue stops on the first failed part.';
   } else if (done) {
@@ -266,13 +274,18 @@ function updateProcessing() {
   el.processingBar.style.width = percent + '%';
   if (state.job.status === 'queued') {
     el.processingLabel.textContent = 'Waiting to process…';
-    el.processingSubtext.textContent = 'Your video is saved locally and waiting in the queue.';
+    el.processingSubtext.textContent = state.job.auto_publish
+      ? 'Your video is waiting to be edited. The clips will publish automatically when ready.'
+      : 'Your video is saved locally and waiting in the queue.';
   } else if (state.job.status === 'processing') {
     el.processingLabel.textContent = state.job.mode === 'cut' ? 'Cutting your selected range…' : 'Splitting your video…';
-    el.processingSubtext.textContent = 'FFmpeg is creating the portrait MP4 output. Large videos can take a little while.';
+    el.processingSubtext.textContent = state.job.auto_publish
+      ? 'FFmpeg is creating the clips. They will publish automatically to your selected Page when ready.'
+      : 'FFmpeg is creating the portrait MP4 output. Large videos can take a little while.';
   } else if (state.job.status === 'completed') {
     el.processingLabel.textContent = state.job.mode === 'cut' ? 'Your cut is ready' : 'Your clips are ready';
-    el.processingSubtext.textContent = (state.job.clips || []).length + ' file(s) created from ' + state.job.source_name + '.';
+    el.processingSubtext.textContent = (state.job.clips || []).length + ' file(s) created from ' + state.job.source_name + '.'
+      + (state.job.auto_publish ? ' Auto-publishing has been triggered for your selected Page.' : '');
     el.processingBar.style.width = '100%';
     el.processingPercent.textContent = '100%';
     el.processButton.disabled = false;
@@ -318,7 +331,10 @@ async function refreshJob() {
     updatePublishUI();
     const stillProcessing = ['queued', 'processing'].includes(state.job.status);
     const stillPublishing = ['queued', 'publishing'].includes(state.job.publish_status);
-    if (stillProcessing || stillPublishing) state.timer = setTimeout(refreshJob, 1200);
+    const awaitingAutoPublish = Boolean(
+      state.job.auto_publish && state.job.status === 'completed' && state.job.publish_status === 'not_started'
+    );
+    if (stillProcessing || stillPublishing || awaitingAutoPublish) state.timer = setTimeout(refreshJob, 1200);
   } catch (error) {
     toast(error.message);
   }
@@ -371,6 +387,12 @@ el.dropzone.addEventListener('drop', event => {
 
 el.modeSplit.addEventListener('change', updateMode);
 el.modeCut.addEventListener('change', updateMode);
+el.processingMode.addEventListener('change', () => {
+  toast(el.processingMode.value === 'fast'
+    ? 'Faster 720p mode selected.'
+    : 'Higher-quality 1080p mode selected.');
+});
+el.autoPublish.addEventListener('change', updateMode);
 
 el.form.addEventListener('submit', async event => {
   event.preventDefault();
@@ -383,6 +405,23 @@ el.form.addEventListener('submit', async event => {
   const clipSeconds = Number(el.clipSeconds.value);
   const cutStart = Number(el.cutStart.value);
   const cutEnd = Number(el.cutEnd.value);
+  const processingMode = el.processingMode.value;
+  const autoPublish = el.autoPublish.checked;
+
+  if (autoPublish) {
+    if (!state.status?.selected_page_id) {
+      return toast('Connect Facebook and choose a Page before enabling auto-publish.');
+    }
+    const selectedPage = (state.status.pages || []).find(
+      page => String(page.id) === String(state.status.selected_page_id)
+    );
+    const destination = selectedPage?.name || 'your selected Facebook Page';
+    const confirmed = window.confirm(
+      'Auto-publish enabled for this job. After editing finishes, Partly will publish the clips to "' +
+      destination + '" in order. This creates posts on Facebook. Continue?'
+    );
+    if (!confirmed) return;
+  }
   if (activeMode === 'split' && (!Number.isInteger(clipSeconds) || clipSeconds < 5 || clipSeconds > 300)) {
     return toast('Clip length must be a whole number between 5 and 300 seconds.');
   }
@@ -412,14 +451,21 @@ el.form.addEventListener('submit', async event => {
     formData.append('clip_seconds', String(clipSeconds));
     formData.append('cut_start', String(cutStart));
     formData.append('cut_end', String(cutEnd));
+    formData.append('processing_mode', processingMode);
+    formData.append('auto_publish', String(autoPublish));
+    formData.append('caption_template', el.captionTemplate.value.trim() || 'Part {part} of {total}');
     state.job = await api('/api/jobs', {method:'POST', body:formData});
-    if (label) label.textContent = activeMode === 'cut' ? 'Cut selected range' : 'Create clips';
+    if (label) label.textContent = autoPublish
+      ? (activeMode === 'cut' ? 'Cut & auto-publish' : 'Create & auto-publish')
+      : (activeMode === 'cut' ? 'Cut selected range' : 'Create clips');
     updateProcessing();
     state.timer = setTimeout(refreshJob, 700);
     toast(activeMode === 'cut' ? 'Video uploaded. Your cut has started.' : 'Video uploaded. Splitting has started.');
   } catch (error) {
     el.processButton.disabled = false;
-    if (label) label.textContent = activeMode === 'cut' ? 'Cut selected range' : 'Create clips';
+    if (label) label.textContent = el.autoPublish.checked
+      ? (activeMode === 'cut' ? 'Cut & auto-publish' : 'Create & auto-publish')
+      : (activeMode === 'cut' ? 'Cut selected range' : 'Create clips');
     toast(error.message);
   }
 });
