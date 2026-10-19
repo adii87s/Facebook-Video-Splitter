@@ -69,6 +69,14 @@
             <p class="field-hint">The end time is exclusive. If it exceeds the video's duration, the cut stops at the end of the video.</p>
           </div>
 
+          <div class="cut-settings processing-profile">
+            <label for="processingMode">Processing speed</label>
+            <select id="processingMode" class="processing-mode-select">
+              <option value="fast" selected>Faster · 720p vertical</option>
+              <option value="quality">Higher quality · 1080p vertical</option>
+            </select>
+            <p class="field-hint">Faster mode renders fewer pixels and usually finishes sooner. Choose 1080p if fine detail matters more than speed.</p>
+          </div>
           <div class="output-info">
             <div class="output-info-icon">9:16</div>
             <div><strong>Vertical MP4 output</strong><p>Portrait layout with a soft blurred background for landscape videos. Each part gets a small PART label.</p></div>
@@ -106,6 +114,17 @@
           </div>
           <div class="connected-caption"><span class="connected-dot"></span><span id="facebookConnectedCaption">Connect a Page to enable publishing.</span></div>
         </div>
+        <div class="auto-publish-settings">
+          <label class="auto-publish-option" for="autoPublish">
+            <input id="autoPublish" type="checkbox">
+            <span><strong>Auto-publish when clips are ready</strong><small>When enabled, clips will be sent to the selected Page immediately after editing finishes. Partly will ask for confirmation before starting the job.</small></span>
+          </label>
+          <div class="caption-field">
+            <label for="captionTemplate">Caption for each Reel</label>
+            <input id="captionTemplate" type="text" maxlength="500" value="Part {part} of {total}" autocomplete="off">
+            <small>Use <code>{part}</code> and <code>{total}</code> to include the part number and total count.</small>
+          </div>
+        </div>
         <div class="permission-list">
           <div><span class="check-dot">✓</span><span><code>pages_show_list</code> — find Pages you manage</span></div>
           <div><span class="check-dot">✓</span><span><code>pages_read_engagement</code> — Page context</span></div>
@@ -120,11 +139,6 @@
         </div>
         <div class="clip-grid" id="clipGrid"></div>
         <div class="publish-tools">
-          <div class="caption-field">
-            <label for="captionTemplate">Caption for each Reel</label>
-            <input id="captionTemplate" type="text" maxlength="500" value="Part {part} of {total}" autocomplete="off">
-            <small>Use <code>{part}</code> and <code>{total}</code> to include the part number and total count.</small>
-          </div>
           <div class="publish-action">
             <button class="button button-facebook" id="publishAll" type="button" disabled><span class="fb-button-mark">f</span><span>Publish all clips in order</span><span class="button-arrow">↗</span></button>
             <p class="publish-hint" id="publishHint">Connect a Facebook Page and create clips before publishing.</p>
@@ -142,7 +156,7 @@
         </div>
       </section>
 
-      <section class="disclaimer"><span class="disclaimer-mark">i</span><p><strong>Before publishing:</strong> Review the selected Page and caption. Partly starts publishing only when you click the publish button. Use videos you own or have permission to distribute.</p></section>
+      <section class="disclaimer"><span class="disclaimer-mark">i</span><p><strong>Before publishing:</strong> Review the selected Page and caption. Auto-publish is optional and starts only if you enable it for a job and confirm the prompt. Use videos you own or have permission to distribute.</p></section>
     </main>
 
     <footer><span>PARTLY <span class="brand-dot">/</span> VIDEO CUTTER & PAGE PUBLISHER</span><span>Edit locally · Publish when you approve</span></footer>
