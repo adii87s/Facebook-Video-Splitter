@@ -116,7 +116,7 @@ def _render_worker_count(total_clips: int) -> int:
             requested = 0
         if requested > 0:
             return max(1, min(total_clips, cpu_count, 8, requested))
-    return max(1, min(total_clips, 4, cpu_count // 2 or 1))
+    return max(1, min(total_clips, 4, cpu_count))
 
 
 def _encoder_thread_count(workers: int) -> int:
