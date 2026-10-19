@@ -34,13 +34,10 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Comman
 if (-not (Test-Path '.env')) {
   Copy-Item '.env.example' '.env'
   Write-Host ''
-  Write-Host 'One-time Facebook setup: .env has been created.' -ForegroundColor Yellow
-  Write-Host 'Fill in FACEBOOK_APP_ID and FACEBOOK_APP_SECRET in Notepad, save, and close Notepad.' -ForegroundColor Yellow
-  Write-Host 'The in-app setup guide is at http://localhost:8000/setup after the server starts.' -ForegroundColor Yellow
-  Start-Process -FilePath 'notepad.exe' -ArgumentList (Join-Path (Get-Location) '.env') -Wait
+  Write-Host 'Local cutter configuration created. No Facebook credentials are needed.' -ForegroundColor Green
 }
 
 Write-Host ''
-Write-Host 'Starting Partly at http://localhost:8000' -ForegroundColor Green
+Write-Host 'Starting Partly Local Video Cutter at http://localhost:8000' -ForegroundColor Green
 Write-Host 'Keep this PowerShell window open while you use the app.' -ForegroundColor Gray
 & .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
