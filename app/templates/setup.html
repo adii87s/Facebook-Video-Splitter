@@ -38,7 +38,7 @@
         <p>Sign in using the Facebook account that manages your Page. Create an app/use case that supports Facebook Login and Page publishing. Copy the App ID and App Secret from its settings.</p>
         <p><a class="text-link" href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">Open Meta apps dashboard ↗</a> · <a class="text-link" href="https://developers.meta.com/resources/" target="_blank" rel="noreferrer">Meta developer resources ↗</a></p></div></div>
       <div class="setup-step"><span class="setup-number">02</span><div><h2>Register the OAuth callback</h2>
-        <p>Configure Facebook Login for Web. In its OAuth settings, register this exact callback URI when the dashboard asks for Valid OAuth Redirect URIs.</p>
+        <p>Configure Facebook Login for Web. In its OAuth settings, enable Client OAuth Login and Web OAuth Login if those toggles are shown, then register this exact callback URI under Valid OAuth Redirect URIs.</p>
         <div class="setup-code"><code id="redirectUri">{{ redirect_uri }}</code><button class="copy-btn" id="copyRedirect" type="button">Copy callback URL</button></div></div></div>
       <div class="setup-step"><span class="setup-number">03</span><div><h2>Make sure the app can publish to Pages</h2>
         <p>Partly requests these permissions during Facebook authorization:</p>
