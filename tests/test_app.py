@@ -9,10 +9,11 @@ def test_home_and_setup_pages_render():
         setup = client.get("/setup")
 
     assert home.status_code == 200
-    assert "Facebook setup guide" in home.text
+    assert "Cut a selected range" in home.text
+    assert "Download all clips (ZIP)" in home.text
+    assert "Facebook setup guide" not in home.text
     assert setup.status_code == 200
     assert "FACEBOOK_REDIRECT_URI" in setup.text
-    assert "pages_manage_posts" in setup.text
 
 
 def test_facebook_login_redirects_to_setup_when_not_configured(monkeypatch):
