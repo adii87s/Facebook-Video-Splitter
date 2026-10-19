@@ -8,6 +8,7 @@ Partly runs on your Windows PC. Cut a long video into numbered portrait MP4 clip
 - **Split into parts:** choose a clip length from 5 to 300 seconds (60 seconds by default).
 - **Cut a selected range:** choose the exact start and end time to keep one section.
 - Choose Faster 720p output or Higher quality 1080p output.
+- Split parts are rendered concurrently using a bounded FFmpeg worker pool; the worker count is limited by available logical CPUs.
 - Preview the source video and each result.
 - Output portrait 9:16 MP4 files with a blurred background behind landscape videos.
 - Automatically add a small `PART` or `CLIP` label.
@@ -46,6 +47,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 The script creates a Python virtual environment, installs the requirements, makes a local `.env` file if needed, and starts the app at <http://localhost:8000>. Facebook is optional for cutting; publishing requires your own Meta developer app credentials in `.env`.
 
 Keep the PowerShell window open while using the tool.
+
+To tune parallel rendering, optionally add `PARTLY_RENDER_WORKERS=4` to `.env`. The default uses up to four workers, limited by available logical CPUs; the setting is capped to the available CPU count.
 
 ## How to use
 
