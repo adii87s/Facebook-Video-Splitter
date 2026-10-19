@@ -24,6 +24,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not upgrade pip.' }
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw 'Could not install project requirements.' }
 
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+  Write-Host 'FFmpeg/FFprobe is not on PATH. Facebook connection can be configured, but video splitting will fail until FFmpeg is installed.' -ForegroundColor Yellow
+  Write-Host 'Install it with: winget install --id Gyan.FFmpeg' -ForegroundColor Yellow
+  Write-Host 'After installation, open a new PowerShell window and run this script again.' -ForegroundColor Yellow
+  Write-Host ''
+}
+
 if (-not (Test-Path '.env')) {
   Copy-Item '.env.example' '.env'
   Write-Host ''
