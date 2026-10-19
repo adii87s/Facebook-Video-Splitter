@@ -370,11 +370,33 @@ def start_publish(job_id: str, payload: PublishRequest, background_tasks: Backgr
     if record.get("publish_status") in {"queued", "publishing", "completed"}:
         raise HTTPException(status_code=409, detail="Publishing is already queued, running, or completed for this job.")
 
-    log = [
-        {"part": clip.get("part", index + 1), "filename": clip["filename"], "status": "queued", "message": "Waiting in the publishing queue"}
-        for index, clip in enumerate(record["clips"])
-    ]
-    _job_update(job_id, publish_status="queued", publish_progress=0, publish_log=log, publish_error=None)
+    previous_log = record.get("publish_log", []) if record.get("publish_status") == "error" else []
+    previous_by_part = {int(item.get("part", 0)): item for item in previous_log if item.get("part") is not None}
+    already_submitted = {
+        part for part, item in previous_by_part.items()
+        if item.get("status") in {"submitted", "published"}
+    }
+    log = []
+    for index, clip in enumerate(record["clips"]):
+        part = int(clip.get("part", index + 1))
+        previous = previous_by_part.get(part, {})
+        if part in already_submitted:
+            log.append({
+                "part": part,
+                "filename": clip["filename"],
+                "status": "submitted",
+                "message": "Previously submitted; skipped on retry to avoid duplicate posts",
+                "video_id": previous.get("video_id"),
+            })
+        else:
+            log.append({
+                "part": part,
+                "filename": clip["filename"],
+                "status": "queued",
+                "message": "Waiting in the publishing queue",
+            })
+    initial_progress = int(len(already_submitted) / len(record["clips"]) * 100)
+    _job_update(job_id, publish_status="queued", publish_progress=initial_progress, publish_log=log, publish_error=None)
     background_tasks.add_task(publish_job, job_id, page["id"], page["name"], page["access_token"], payload.caption_template)
     return public_job(_require_job(job_id))
 
@@ -385,15 +407,20 @@ def publish_job(job_id: str, page_id: str, page_name: str, page_token: str, capt
         return
     clips = sorted(record.get("clips", []), key=lambda item: item.get("part", 0))
     log = record.get("publish_log", [])
-    _job_update(job_id, publish_status="publishing", publish_progress=0)
     total = len(clips)
+    submitted_before = sum(item.get("status") in {"submitted", "published"} for item in log)
+    _job_update(job_id, publish_status="publishing", publish_progress=int(submitted_before / total * 100) if total else 0)
     for index, clip in enumerate(clips):
         part = int(clip.get("part", index + 1))
         filename = str(clip.get("filename", ""))
+        current = read_job(job_id) or {}
+        log = current.get("publish_log", log)
+        # On retries, never post a clip that Meta already accepted.
+        if index < len(log) and log[index].get("status") in {"submitted", "published"}:
+            continue
         path = job_dir(job_id) / "clips" / filename
         caption = caption_template.replace("{part}", str(part)).replace("{total}", str(total))
         caption = f"{caption}\nPart {part} of {total}" if "{part}" not in caption_template and "{total}" not in caption_template else caption
-        log = read_job(job_id).get("publish_log", log)  # type: ignore[union-attr]
         if index < len(log):
             log[index].update(status="publishing", message=f"Uploading Part {part} to {page_name}")
         _job_update(job_id, publish_log=log)
@@ -407,16 +434,19 @@ def publish_job(job_id: str, page_id: str, page_name: str, page_token: str, capt
             )
             if index < len(log):
                 log[index].update(status="submitted", message="Facebook accepted the publish request", video_id=result.get("video_id"))
+            submitted_count = sum(item.get("status") in {"submitted", "published"} for item in log)
             _job_update(
                 job_id,
                 publish_log=log,
-                publish_progress=int((index + 1) / total * 100),
+                publish_progress=int(submitted_count / total * 100) if total else 100,
             )
         except (FacebookPublishError, OSError, httpx.HTTPError, ValueError) as exc:
             if index < len(log):
                 log[index].update(status="failed", message=str(exc)[:800])
-            # Stop on the first error to avoid silently skipping or reordering the remaining parts.
+            # Stop on the first error; already-submitted parts remain preserved for safe retries.
             for remaining in log[index + 1 :]:
+                if remaining.get("status") in {"submitted", "published"}:
+                    continue
                 remaining["status"] = "blocked"
                 remaining["message"] = "Not attempted because the previous part failed"
             _job_update(
