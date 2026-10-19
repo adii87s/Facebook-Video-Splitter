@@ -5,6 +5,7 @@ A local-first app for turning one video into a sequence of numbered, 60-second v
 ## What is included
 
 - Upload one video from the browser.
+- Optionally enable automatic publishing so the sequential Page upload begins immediately after a successful split.
 - Split it into consecutive 60-second segments (the final segment can be shorter).
 - Reframe each segment to a vertical 9:16 layout with a blurred background when the source is landscape.
 - Burn a `PART 1`, `PART 2`, … badge into the top-right corner of each clip.
@@ -28,30 +29,22 @@ A local-first app for turning one video into a sequence of numbered, 60-second v
 
 ## Run on Windows
 
-Open PowerShell in this folder:
+The easiest option is to run the Windows helper from PowerShell:
 
 ```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-Copy-Item .env.example .env
-notepad .env
+git clone https://github.com/adii87s/Facebook-Video-Splitter.git
+cd Facebook-Video-Splitter
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\run_windows.ps1
 ```
 
-Add your Meta app ID and secret to `.env`. For the Meta app, add this exact development redirect URL to Valid OAuth Redirect URIs:
+On first run it creates `.env` from `.env.example`, opens it in Notepad, and starts the app after you save and close it. Fill in your own Meta `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` values. The in-app setup guide is at <http://localhost:8000/setup>.
+
+For Meta, register this exact callback URI in Facebook Login's Valid OAuth Redirect URIs when the dashboard asks for it:
 
 `http://localhost:8000/auth/facebook/callback`
 
-Then start the app:
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Open <http://localhost:8000>.
-
-If FFmpeg is not already installed, install it (for example, using `winget install Gyan.FFmpeg`) and open a new terminal so `PATH` refreshes.
+If FFmpeg/FFprobe are not installed, install them (for example, using `winget install --id Gyan.FFmpeg`) and open a new terminal so `PATH` refreshes. If you change `.env` later, restart the server.
 
 ## GitHub repository
 
@@ -78,7 +71,7 @@ The starter requests these Page permissions only:
 - `pages_read_engagement` — basic Page context needed by Page integrations
 - `pages_manage_posts` — publish Page content
 
-The user authorizes in Meta's login dialog. The app exchanges the OAuth code server-side, obtains the managed Page list, encrypts Page access tokens at rest, and never handles the user's Facebook password. Keep `.env`, `data/`, and `.token_key` files private.
+The user authorizes in Meta's login dialog. The app exchanges the OAuth code server-side, obtains the managed Page list, encrypts Page access tokens at rest, and never handles the user's Facebook password. Keep `.env` and `data/` private. The generated session and token encryption keys are stored under `data/`, which is ignored by Git.
 
 Meta references:
 
@@ -88,7 +81,7 @@ Meta references:
 
 ## Configuration
 
-See `.env.example`. Keep the development server bound to localhost. Do not expose it directly to the public internet; this starter is a single-user local app, not a hardened multi-user service.
+See `.env.example` and the [Facebook connection guide](docs/facebook-setup.md). Keep the development server bound to localhost. Do not expose it directly to the public internet; this starter is a single-user local app, not a hardened multi-user service.
 
 ## Data and cleanup
 
