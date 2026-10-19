@@ -1,35 +1,35 @@
-# Facebook Video Splitter
+# Partly — Local Video Cutter
 
-A local-first app for turning one video into a sequence of numbered, 60-second vertical clips and publishing them one at a time to a Facebook **Page** through Meta's official APIs.
+A small browser-based video cutter that runs on your own Windows PC. Add a video, choose how to cut it, preview the resulting MP4 clips, and download them for manual upload wherever you like. **No Meta app, Facebook login, API access, or hosting is required for local cutting.**
 
-## What is included
+## Features
 
-- Upload one video from the browser.
-- Optionally enable automatic publishing so the sequential Page upload begins immediately after a successful split.
-- Split it into consecutive 60-second segments (the final segment can be shorter).
-- Reframe each segment to a vertical 9:16 layout with a blurred background when the source is landscape.
-- Burn a `PART 1`, `PART 2`, … badge into the top-right corner of each clip.
-- Preview and download processed clips.
-- Connect a Facebook account through Meta OAuth, select a Page you manage, and queue the clips for sequential Reel publishing.
-- Store Page access tokens encrypted in a local SQLite database; never ask for or store a Facebook password.
-
-## Important before publishing
-
-1. Use this only for videos you own or have explicit permission to distribute. Uploading a copyrighted movie in parts can still violate copyright and Meta's policies.
-2. Publishing is supported for Facebook Pages that you manage, not arbitrary personal profiles. Meta may require App Review / Advanced Access before other users can connect.
-3. Meta's Reels publishing API has format and duration requirements. This app exports 9:16 MP4 clips up to 60 seconds; very short final fragments may be rejected by Facebook. Exact requirements and available Graph API versions can change, so check Meta's current docs and set `META_GRAPH_API_VERSION` to a version enabled for your app.
-4. Do a first test with a short, rights-cleared sample video and a test Page before uploading a full-length source.
+- Select a video file or drag it into the app.
+- **Split into parts:** choose a clip length from 5 to 300 seconds (60 seconds by default).
+- **Cut a selected range:** choose the exact start and end time to keep one section.
+- Preview the source video and each result.
+- Output portrait 9:16 MP4 files with a blurred background behind landscape videos.
+- Automatically add a small `PART` or `CLIP` label.
+- Download clips individually or bundle all clips in one ZIP file.
+- Keep source videos and generated output on your local machine.
 
 ## Requirements
 
+- Windows 10/11
 - Python 3.11 or newer
-- FFmpeg **and** FFprobe installed and available on `PATH`
-- A Meta developer app configured for Facebook Login with a valid OAuth redirect URI
-- A Facebook Page on which the connected user has content-creation access
+- FFmpeg and FFprobe available on your `PATH`
+
+Install FFmpeg if it is not installed:
+
+```powershell
+winget install --id Gyan.FFmpeg
+```
+
+After installation, open a new PowerShell window so the updated `PATH` is available.
 
 ## Run on Windows
 
-The easiest option is to run the Windows helper from PowerShell:
+Clone the repository and start the helper script:
 
 ```powershell
 git clone https://github.com/adii87s/Facebook-Video-Splitter.git
@@ -38,51 +38,31 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\run_windows.ps1
 ```
 
-On first run it creates `.env` from `.env.example`, opens it in Notepad, and starts the app after you save and close it. Fill in your own Meta `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` values. The in-app setup guide is at <http://localhost:8000/setup>.
+The script creates a Python virtual environment, installs the requirements, makes a local `.env` file if needed, and starts the app at <http://localhost:8000>. **You do not need to enter any Facebook credentials.**
 
-For Meta, register this exact callback URI in Facebook Login's Valid OAuth Redirect URIs when the dashboard asks for it:
+Keep the PowerShell window open while using the tool.
 
-`http://localhost:8000/auth/facebook/callback`
+## How to use
 
-If FFmpeg/FFprobe are not installed, install them (for example, using `winget install --id Gyan.FFmpeg`) and open a new terminal so `PATH` refreshes. If you change `.env` later, restart the server.
+1. Open <http://localhost:8000>.
+2. Add a video using the upload box or drag-and-drop.
+3. Pick **Split into parts** and set the clip duration, or pick **Cut a selected range** and enter the start/end times in seconds.
+4. Click **Create clips** or **Cut selected range**.
+5. Preview the results. Download an individual MP4 or click **Download all clips (ZIP)**.
+6. Upload the downloaded clips manually to Facebook or another platform yourself.
 
-## GitHub repository
+The app reframes clips into vertical 9:16 MP4s. If you want landscape output without the vertical background, the video processor's FFmpeg filter can be adjusted.
 
-The public project repository is [adii87s/Facebook-Video-Splitter](https://github.com/adii87s/Facebook-Video-Splitter). To work on a local clone, install Git and GitHub CLI, authenticate with `gh auth login`, then run:
+## File storage and privacy
+
+The app binds to `127.0.0.1` by default and processes videos on your computer. Uploaded sources, generated clips, the ZIP archive, the local SQLite database, and development secrets are stored in `data/`, which is excluded from Git. Do not commit your private `.env` file or expose this local app directly to the public internet.
+
+Only edit and distribute video content you own or have permission to use.
+
+## Tests
 
 ```powershell
-git clone https://github.com/adii87s/Facebook-Video-Splitter.git
-cd Facebook-Video-Splitter
+.\.venv\Scripts\python.exe -m pip install pytest
+.\.venv\Scripts\python.exe -m compileall -q app tests
+.\.venv\Scripts\python.exe -m pytest -q
 ```
-
-Make changes, run the tests, then commit and push your branch:
-
-```powershell
-git add .
-git commit -m "Describe your changes"
-git push
-```
-
-## Meta app permissions and OAuth
-
-The starter requests these Page permissions only:
-
-- `pages_show_list` — list Pages managed by the user
-- `pages_read_engagement` — basic Page context needed by Page integrations
-- `pages_manage_posts` — publish Page content
-
-The user authorizes in Meta's login dialog. The app exchanges the OAuth code server-side, obtains the managed Page list, encrypts Page access tokens at rest, and never handles the user's Facebook password. Keep `.env` and `data/` private. The generated session and token encryption keys are stored under `data/`, which is ignored by Git.
-
-Meta references:
-
-- [Facebook API collection in Meta's Postman workspace](https://www.postman.com/meta/facebook/documentation/r56bjfd/facebook-api)
-- [Facebook Reels publishing API sample](https://github.com/fbsamples/Facebook-Reels-Publishing-API-Postman-Collection)
-- [Meta for Developers](https://developers.facebook.com/)
-
-## Configuration
-
-See `.env.example` and the [Facebook connection guide](docs/facebook-setup.md). Keep the development server bound to localhost. Do not expose it directly to the public internet; this starter is a single-user local app, not a hardened multi-user service.
-
-## Data and cleanup
-
-Generated clips, source videos, job metadata, the SQLite database, and locally generated secrets are stored in `data/`, which is ignored by Git. Remove that directory to clear local jobs and disconnect the saved Page tokens.
