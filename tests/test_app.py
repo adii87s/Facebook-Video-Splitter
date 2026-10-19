@@ -88,3 +88,21 @@ def test_auto_publish_requires_a_selected_facebook_page(monkeypatch):
 
     assert response.status_code == 409
     assert "Connect Facebook and select a Page" in response.json()["detail"]
+
+
+
+def test_auto_publish_rejects_reel_lengths_over_60_seconds(monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "selected_page_with_token",
+        lambda: {"id": "123", "name": "Test Page", "access_token": "private-token"},
+    )
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/jobs",
+            files={"video": ("test.mp4", b"fake-video", "video/mp4")},
+            data={"auto_publish": "true", "mode": "split", "clip_seconds": "120"},
+        )
+
+    assert response.status_code == 422
+    assert "60 seconds or shorter" in response.json()["detail"]
