@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
@@ -103,6 +105,63 @@ def _badge_image(path: Path, label: str) -> None:
     image.save(path)
 
 
+def _render_worker_count(total_clips: int) -> int:
+    """Choose a conservative parallelism level, with an optional .env override."""
+    cpu_count = os.cpu_count() or 4
+    configured = os.getenv("PARTLY_RENDER_WORKERS", "").strip()
+    if configured:
+        try:
+            requested = int(configured)
+        except ValueError:
+            requested = 0
+        if requested > 0:
+            return max(1, min(total_clips, cpu_count, 8, requested))
+    return max(1, min(total_clips, 4, cpu_count // 2 or 1))
+
+
+def _encoder_thread_count(workers: int) -> int:
+    """Divide available logical CPUs between concurrent FFmpeg processes."""
+    cpu_count = os.cpu_count() or 4
+    return max(1, min(8, cpu_count // max(1, workers)))
+
+
+def _render_segment(
+    source_path: Path,
+    output_dir: Path,
+    part: int,
+    start: float,
+    clip_duration: float,
+    profile: dict[str, object],
+    filter_graph: str,
+    encoder_threads: int,
+) -> Path:
+    filename = f"part-{part:03d}.mp4"
+    output_path = output_dir / filename
+    badge_path = output_dir / f".badge-{part:03d}.png"
+    _badge_image(badge_path, f"PART {part}")
+
+    # Each part is independent, so separate FFmpeg processes can render in parallel.
+    # Bound filter and encoder threads to avoid oversubscribing the CPU.
+    command = [
+        FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_complex_threads", "1",
+        "-ss", f"{start:.3f}", "-i", str(source_path),
+        "-loop", "1", "-framerate", "30", "-i", str(badge_path),
+        "-t", f"{clip_duration:.3f}",
+        "-filter_complex", filter_graph,
+        "-map", "[video]", "-map", "0:a?",
+        "-c:v", "libx264", "-threads", str(encoder_threads),
+        "-preset", str(profile["preset"]), "-crf", str(profile["crf"]),
+        "-c:a", "aac", "-b:a", str(profile["audio_bitrate"]), "-ar", "44100",
+        "-r", "30", "-movflags", "+faststart", str(output_path),
+    ]
+    try:
+        _run(command)
+    finally:
+        badge_path.unlink(missing_ok=True)
+    return output_path
+
+
 def split_video(
     source_path: Path,
     output_dir: Path,
@@ -117,46 +176,46 @@ def split_video(
     total = len(segments)
     output_dir.mkdir(parents=True, exist_ok=True)
     clips: list[dict[str, object]] = []
+    if not segments:
+        return clips
 
-    for index, (start, clip_duration) in enumerate(segments):
-        if clip_duration <= 0:
-            continue
-        part = index + 1
-        filename = f"part-{part:03d}.mp4"
-        output_path = output_dir / filename
-        badge_path = output_dir / f".badge-{part:03d}.png"
-        _badge_image(badge_path, f"PART {part}")
-
-        # Center the original video over a blurred, filled 9:16 background. This
-        # keeps landscape movies watchable instead of cropping away their sides.
-        command = [
-            FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
-            "-ss", f"{start:.3f}", "-i", str(source_path),
-            "-loop", "1", "-framerate", "30", "-i", str(badge_path),
-            "-t", f"{clip_duration:.3f}",
-            "-filter_complex", filter_graph,
-            "-map", "[video]", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", str(profile["preset"]), "-crf", str(profile["crf"]),
-            "-c:a", "aac", "-b:a", str(profile["audio_bitrate"]), "-ar", "44100",
-            "-r", "30", "-movflags", "+faststart", str(output_path),
-        ]
-        try:
-            _run(command)
-        finally:
-            badge_path.unlink(missing_ok=True)
-        clip = {
-            "part": part,
-            "filename": filename,
-            "duration": round(clip_duration, 3),
-            "start_seconds": start,
-            "url": f"/api/jobs/CLIP_JOB_ID/clips/{filename}",
-            "publish_status": "not_started",
+    workers = _render_worker_count(total)
+    encoder_threads = _encoder_thread_count(workers)
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="partly-render") as pool:
+        future_metadata = {
+            pool.submit(
+                _render_segment,
+                source_path,
+                output_dir,
+                index + 1,
+                start,
+                clip_duration,
+                profile,
+                filter_graph,
+                encoder_threads,
+            ): (index + 1, start, clip_duration)
+            for index, (start, clip_duration) in enumerate(segments)
+            if clip_duration > 0
         }
-        clips.append(clip)
-        if on_progress:
-            on_progress(part, total, output_path, clip_duration)
-    return clips
 
+        # Report each completed part from the coordinating thread, not from workers.
+        # This keeps job-store progress updates from racing with one another.
+        for future in as_completed(future_metadata):
+            part, start, clip_duration = future_metadata[future]
+            output_path = future.result()
+            clips.append({
+                "part": part,
+                "filename": output_path.name,
+                "duration": round(clip_duration, 3),
+                "start_seconds": start,
+                "url": f"/api/jobs/CLIP_JOB_ID/clips/{output_path.name}",
+                "publish_status": "not_started",
+            })
+            if on_progress:
+                on_progress(part, total, output_path, clip_duration)
+
+    clips.sort(key=lambda clip: int(clip["part"]))
+    return clips
 def cut_video(
     source_path: Path,
     output_dir: Path,
@@ -185,12 +244,14 @@ def cut_video(
     _badge_image(badge_path, "CLIP 1")
     command = [
         FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-y",
+        "-filter_complex_threads", "1",
         "-ss", f"{float(start_seconds):.3f}", "-i", str(source_path),
         "-loop", "1", "-framerate", "30", "-i", str(badge_path),
         "-t", f"{clip_duration:.3f}",
         "-filter_complex", filter_graph,
         "-map", "[video]", "-map", "0:a?",
-        "-c:v", "libx264", "-preset", str(profile["preset"]), "-crf", str(profile["crf"]),
+        "-c:v", "libx264", "-threads", str(_encoder_thread_count(1)),
+        "-preset", str(profile["preset"]), "-crf", str(profile["crf"]),
         "-c:a", "aac", "-b:a", str(profile["audio_bitrate"]), "-ar", "44100",
         "-r", "30", "-movflags", "+faststart", str(output_path),
     ]
