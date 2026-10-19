@@ -28,3 +28,25 @@
   .fb-connected-actions .button{width:100%}
   #publishAll{min-width:0;width:100%}
 }
+
+
+/* Rendering speed and opt-in auto-publishing */
+.processing-mode-select{width:100%;height:43px;background:#0d1522;color:var(--text);border:1px solid #35445a;border-radius:9px;padding:0 12px;font:12px var(--font);outline:0}
+.processing-mode-select:focus{border-color:var(--lime)}
+.auto-publish-settings{margin-top:21px;padding:16px;background:#0d1624;border:1px solid #29384c;border-radius:12px}
+.auto-publish-option{display:flex;align-items:flex-start;gap:11px;cursor:pointer}
+.auto-publish-option input{accent-color:var(--lime);width:17px;height:17px;flex:0 0 17px;margin:2px 0 0}
+.auto-publish-option>span{display:flex;flex-direction:column;gap:5px}
+.auto-publish-option strong{font-size:12px;color:#eef4fc}
+.auto-publish-option small{font-size:10px;color:#91a0b5;line-height:1.7}
+.auto-publish-settings .caption-field{margin-top:16px}
+#publishAll{min-width:250px}
+.publish-tools{display:block}
+.publish-action{align-items:stretch}
+.publish-action .button{width:100%}
+.publish-hint{text-align:left}
+@media(max-width:850px){
+  .publish-tools{display:block}
+  .publish-action{align-items:stretch}
+  .publish-action .button{width:100%}
+}
